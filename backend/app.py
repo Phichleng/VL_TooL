@@ -15,6 +15,10 @@ from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
+import os
+from flask import send_file
+import zipfile
+import io
 import logging
 
 # Import your video downloader
@@ -783,6 +787,74 @@ def clear_downloads():
         logger.error(f"Error clearing downloads: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/downloads/<download_id>/file', methods=['GET'])
+def download_file(download_id):
+    """Download the actual video file"""
+    try:
+        # Find the download record
+        download = active_downloads.get(download_id)
+        if not download:
+            return jsonify({'error': 'Download not found'}), 404
+        
+        filename = download.get('filename')
+        if not filename:
+            return jsonify({'error': 'No filename available'}), 404
+        
+        file_path = global_downloader.download_path / filename
+        if not file_path.exists():
+            return jsonify({'error': 'File not found on server'}), 404
+        
+        return send_file(file_path, as_attachment=True)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/downloads/all/zip', methods=['GET'])
+def download_all_files():
+    """Download all files as a zip archive"""
+    try:
+        downloads_path = global_downloader.download_path
+        
+        # Create zip file in memory
+        zip_buffer = io.BytesIO()
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for file_path in downloads_path.glob('*'):
+                if file_path.is_file() and file_path.suffix in ['.mp4', '.webm', '.mkv', '.avi']:
+                    zip_file.write(file_path, file_path.name)
+        
+        zip_buffer.seek(0)
+        
+        return send_file(
+            io.BytesIO(zip_buffer.read()),
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='downloaded_videos.zip'
+        )
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/files', methods=['GET'])
+def list_downloaded_files():
+    """List all downloaded files"""
+    try:
+        downloads_path = global_downloader.download_path
+        files = []
+        
+        for file_path in downloads_path.glob('*'):
+            if file_path.is_file():
+                files.append({
+                    'name': file_path.name,
+                    'size': file_path.stat().st_size,
+                    'modified': file_path.stat().st_mtime
+                })
+        
+        return jsonify({'files': files})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 # WebSocket event handlers
 @socketio.on('connect')
 def handle_connect():
