@@ -816,6 +816,16 @@ def not_found(error):
 def internal_error(error):
     return jsonify({'error': 'Internal server error'}), 500
 
+@app.route('/', methods=['GET'])
+def serve_frontend():
+    """Serve the frontend HTML file"""
+    return send_from_directory('.', 'index.html')
+
+@app.route('/<path:path>', methods=['GET'])
+def serve_static(path):
+    """Serve static files"""
+    return send_from_directory('.', path)
+
 def main():
     """Main function to run the Flask server"""
     # Initialize the downloader
@@ -824,9 +834,15 @@ def main():
     print("🚀 Enhanced Video Downloader Backend Starting...")
     print(f"📁 Download directory: {global_downloader.download_path}")
     print(f"🔧 FFmpeg available: {global_downloader.check_ffmpeg()}")
-    print("🌐 Server will be available at: http://localhost:5000")
-    print("📡 WebSocket endpoint: ws://localhost:5000")
+    
+    # Get port from environment variable (Render sets this)
+    port = int(os.environ.get('PORT', 4000))
+    host = '0.0.0.0'  # Important: bind to all interfaces
+    
+    print(f"🌐 Server will be available at: http://{host}:{port}")
+    print(f"📡 WebSocket endpoint: ws://{host}:{port}")
     print("\n💡 API Endpoints:")
+    print("   GET  /                    - Frontend interface")
     print("   GET  /api/health          - Health check")
     print("   GET  /api/settings        - Get settings") 
     print("   POST /api/settings        - Update settings")
@@ -843,8 +859,8 @@ def main():
     try:
         socketio.run(
             app,
-            host='0.0.0.0',
-            port=4000,
+            host=host,
+            port=port,
             debug=False,  # Set to False for better performance
             allow_unsafe_werkzeug=True
         )
