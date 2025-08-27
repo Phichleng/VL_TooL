@@ -565,18 +565,18 @@
           // Enhanced utility functions
           const getStatusIcon = (status) => {
             const icons = {
-              'pending': 'โณ',
-              'queued': 'ๅ',
-              'starting': 'ร',
-              'downloading': 'โฌ๏ธ',
-              'extracting': 'ๅ',
-              'extracting_links': 'ๅ',
-              'extracting_profile': 'ค',
-              'completed': 'โ',
-              'error': 'โ',
-              'cancelled': 'โน๏ธ'
+              'pending': '⏳',
+              'queued': '⏳',
+              'starting': '🚀',
+              'downloading': '⬇️',
+              'extracting': '🔍',
+              'extracting_links': '🔗',
+              'extracting_profile': '👤',
+              'completed': '✅',
+              'error': '❌',
+              'cancelled': '⏹️'
             };
-            return icons[status] || 'โ';
+            return icons[status] || '❓';
           };
 
           const getStatusColor = (status) => {
@@ -681,7 +681,7 @@
                     
                     {download.filename && (
                       <p className="text-xs text-gray-500 truncate mt-1" title={download.filename}>
-                        ้ {download.filename}
+                        📁 {download.filename}
                       </p>
                     )}
                   </div>
@@ -693,7 +693,7 @@
                         className="text-gray-400 hover:text-red-500 transition-colors text-sm"
                         title="Cancel download"
                       >
-                        โน๏ธ
+                        ⏹️
                       </button>
                     )}
                     <button 
@@ -701,7 +701,7 @@
                       className="text-gray-400 hover:text-blue-500 transition-colors text-sm"
                       title={expanded ? "Collapse details" : "Expand details"}
                     >
-                      {expanded ? 'โฒ' : 'โผ'}
+                      {expanded ? '▲' : '▼'}
                     </button>
                   </div>
                 </div>
@@ -719,13 +719,13 @@
                       <span className="font-medium">{Math.round(download.percentage || download.progress || 0)}%</span>
                       <div className="flex space-x-3">
                         {download.downloaded_bytes > 0 && (
-                          <span>้ฆ {formatBytes(download.downloaded_bytes)}</span>
+                          <span> {formatBytes(download.downloaded_bytes)}</span>
                         )}
                         {download.speed > 0 && (
-                          <span>โก {formatSpeed(download.speed)}</span>
+                          <span> {formatSpeed(download.speed)}</span>
                         )}
                         {download.eta > 0 && (
-                          <span>โฑ๏ธ {formatTime(download.eta)}</span>
+                          <span> {formatTime(download.eta)}</span>
                         )}
                       </div>
                     </div>
@@ -741,14 +741,13 @@
                         download
                         className="flex-1 bg-green-500 text-white text-sm py-2 px-3 rounded hover:bg-green-600 transition-colors text-center font-medium"
                       >
-                        ๅฅ Download Video
+                        Download Video
                       </a>
                       <button
                         onClick={() => copyDownloadLink(download.id)}
                         className="bg-blue-500 text-white text-sm py-2 px-3 rounded hover:bg-blue-600 transition-colors"
                         title="Copy download link"
                       >
-                        ๅ
                       </button>
                     </div>
                   </div>
@@ -815,13 +814,13 @@
                   {download.status === 'completed' && (
                     <span className="text-xs text-green-600 font-medium flex items-center">
                       <span className="mr-1">โจ</span>
-                      Done {download.total_time && `in ${formatTime(download.total_time)}`}
+                      ✨Done {download.total_time && `in ${formatTime(download.total_time)}`}
                     </span>
                   )}
                   
                   {download.status === 'error' && (
                     <span className="text-xs text-red-500 truncate max-w-32" title={download.error}>
-                      โ Failed
+                      ❌Failed
                     </span>
                   )}
                 </div>
