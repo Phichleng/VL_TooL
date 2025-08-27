@@ -748,6 +748,7 @@
                         className="bg-blue-500 text-white text-sm py-2 px-3 rounded hover:bg-blue-600 transition-colors"
                         title="Copy download link"
                       >
+                      <span>🔗CopyLinks</span>
                       </button>
                     </div>
                   </div>
@@ -813,7 +814,7 @@
                   
                   {download.status === 'completed' && (
                     <span className="text-xs text-green-600 font-medium flex items-center">
-                      <span className="mr-1">โจ</span>
+                      <span className="mr-1"></span>
                       ✨Done {download.total_time && `in ${formatTime(download.total_time)}`}
                     </span>
                   )}
