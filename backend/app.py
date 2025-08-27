@@ -12,7 +12,7 @@ import uuid
 import threading
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, send_file, make_response
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 import os
@@ -42,6 +42,7 @@ active_downloads = {}
 download_queue = []
 global_downloader = None
 
+# Update the progress tracker to emit file ready event
 class EnhancedProgressTracker:
     """Enhanced progress tracker with better error handling and status updates"""
     
@@ -125,15 +126,25 @@ class EnhancedProgressTracker:
                     'progress': 100,
                     'total_time': total_time,
                     'downloaded_bytes': self.total_bytes or self.downloaded_bytes,
-                    'total_bytes': self.total_bytes or self.downloaded_bytes
+                    'total_bytes': self.total_bytes or self.downloaded_bytes,
+                    'file_ready': True  # Add this flag for auto-download trigger
                 }
                 
                 # Update global state
                 if self.download_id in active_downloads:
                     active_downloads[self.download_id].update(completion_data)
                 
-                # Emit completion status
+                # Emit completion status with file ready flag
                 self.socketio.emit('download_status', completion_data)
+                
+                # Emit special event for auto-download
+                self.socketio.emit('file_ready', {
+                    'id': self.download_id,
+                    'filename': filename,
+                    'download_url': f'/api/downloads/{self.download_id}/file',
+                    'auto_download': True
+                })
+                
                 print(f"[{self.download_id[:8]}] ✅ Completed: {filename} ({self._format_time(total_time)})")
                 
             elif status == 'error':
@@ -199,6 +210,24 @@ def initialize_downloader():
     )
     
     return global_downloader
+
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = make_response()
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add('Access-Control-Allow-Headers', "*")
+        response.headers.add('Access-Control-Allow-Methods', "*")
+        return response
+
+# Add general CORS headers to all responses
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Expose-Headers', 'Content-Disposition')
+    return response
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -790,7 +819,7 @@ def clear_downloads():
 
 @app.route('/api/downloads/<download_id>/file', methods=['GET'])
 def download_file(download_id):
-    """Download the actual video file"""
+    """Download the actual video file with proper headers for auto-download"""
     try:
         # Find the download record
         download = active_downloads.get(download_id)
@@ -805,11 +834,71 @@ def download_file(download_id):
         if not file_path.exists():
             return jsonify({'error': 'File not found on server'}), 404
         
-        return send_file(file_path, as_attachment=True)
+        # Get file size for proper headers
+        file_size = file_path.stat().st_size
+        
+        # Set proper headers for automatic download
+        response = send_file(
+            file_path, 
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/octet-stream'
+        )
+        
+        # Add CORS headers for cross-origin downloads
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response.headers['Access-Control-Expose-Headers'] = 'Content-Disposition, Content-Length'
+        
+        # Add cache control headers
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        
+        # Add content length
+        response.headers['Content-Length'] = str(file_size)
+        
+        return response
         
     except Exception as e:
+        logger.error(f"Error serving file {download_id}: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
+    
+# Add a new endpoint for checking file availability
+@app.route('/api/downloads/<download_id>/check', methods=['GET'])
+def check_file_availability(download_id):
+    """Check if a file is ready for download"""
+    try:
+        download = active_downloads.get(download_id)
+        if not download:
+            return jsonify({'available': False, 'error': 'Download not found'}), 404
+        
+        if download['status'] != 'completed':
+            return jsonify({
+                'available': False, 
+                'status': download['status'],
+                'progress': download.get('progress', 0)
+            })
+        
+        filename = download.get('filename')
+        if not filename:
+            return jsonify({'available': False, 'error': 'No filename available'})
+        
+        file_path = global_downloader.download_path / filename
+        if not file_path.exists():
+            return jsonify({'available': False, 'error': 'File not found on server'})
+        
+        return jsonify({
+            'available': True,
+            'filename': filename,
+            'size': file_path.stat().st_size,
+            'download_url': f'/api/downloads/{download_id}/file'
+        })
+        
+    except Exception as e:
+        return jsonify({'available': False, 'error': str(e)}), 500
+    
 @app.route('/api/downloads/all/zip', methods=['GET'])
 def download_all_files():
     """Download all files as a zip archive"""
