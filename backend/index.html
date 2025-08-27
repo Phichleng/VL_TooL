@@ -147,7 +147,7 @@
 
           // Enhanced WebSocket connection with auto-reconnect
           const connectSocket = useCallback(() => {
-            console.log('🔌 Attempting to connect to server...');
+            console.log('Attempting to connect to server...');
             
             const newSocket = io(window.location.origin, {
               transports: ['websocket', 'polling'],
@@ -160,7 +160,7 @@
             
             // Connection events
             newSocket.on('connect', () => {
-              console.log('✅ Connected to server');
+              console.log('Connected to server');
               setConnectionStatus('connected');
               setSocket(newSocket);
               
@@ -175,48 +175,48 @@
             });
 
             newSocket.on('disconnect', (reason) => {
-              console.log('❌ Disconnected from server:', reason);
+              console.log('Disconnected from server:', reason);
               setConnectionStatus('disconnected');
               
               // Attempt reconnection after delay
               if (!reconnectTimeoutRef.current) {
                 reconnectTimeoutRef.current = setTimeout(() => {
-                  console.log('🔄 Attempting to reconnect...');
+                  console.log('Attempting to reconnect...');
                   connectSocket();
                 }, 3000);
               }
             });
             
             newSocket.on('connect_error', (error) => {
-              console.error('🔌 Connection error:', error);
+              console.error('Connection error:', error);
               setConnectionStatus('error');
             });
 
             // Enhanced progress event listeners
             newSocket.on('download_progress', (data) => {
-              console.log('📊 Progress update:', data);
+              console.log('Progress update:', data);
               updateDownloadProgress(data.id, data);
             });
 
             newSocket.on('download_status', (data) => {
-              console.log('📋 Status update:', data);
+              console.log('Status update:', data);
               updateDownloadStatus(data.id, data);
             });
 
             newSocket.on('batch_progress', (data) => {
-              console.log('📦 Batch progress:', data);
+              console.log('Batch progress:', data);
               updateBatchProgress(data);
             });
 
             newSocket.on('downloads_update', (data) => {
-              console.log('📥 Downloads sync:', data);
+              console.log('Downloads sync:', data);
               if (data.downloads) {
                 setDownloads(data.downloads);
               }
             });
 
             newSocket.on('downloads_cleared', () => {
-              console.log('🧹 Downloads cleared');
+              console.log('Downloads cleared');
               setDownloads(prev => prev.filter(d => 
                 ['queued', 'starting', 'downloading', 'extracting', 'extracting_links', 'extracting_profile'].includes(d.status)
               ));
@@ -367,7 +367,7 @@
                 addDownloadToUI(result.download_id, singleUrl, 'single');
                 setSingleUrl('');
                 setCustomFilename('');
-                console.log('✅ Single download started:', result.download_id);
+                console.log('Single download started:', result.download_id);
               } else {
                 alert('Error: ' + result.error);
               }
@@ -401,7 +401,7 @@
               if (response.ok) {
                 // Batch downloads will be added via WebSocket events
                 setBatchUrls('');
-                console.log('✅ Batch download started:', result.batch_id);
+                console.log('Batch download started:', result.batch_id);
               } else {
                 alert('Error: ' + result.error);
               }
@@ -436,7 +436,7 @@
                 addDownloadToUI(result.download_id, profileUrl, 'profile');
                 setProfileUrl('');
                 setMaxVideos('');
-                console.log('✅ Profile download started:', result.download_id);
+                console.log('Profile download started:', result.download_id);
               } else {
                 alert('Error: ' + result.error);
               }
@@ -470,7 +470,7 @@
               if (response.ok) {
                 addDownloadToUI(result.download_id, webpageUrl, 'webpage');
                 setWebpageUrl('');
-                console.log('✅ Webpage download started:', result.download_id);
+                console.log('Webpage download started:', result.download_id);
               } else {
                 alert('Error: ' + result.error);
               }
@@ -520,7 +520,7 @@
               
               if (response.ok) {
                 const result = await response.json();
-                console.log('🧹 Cleared downloads:', result.cleared_count);
+                console.log('Cleared downloads:', result.cleared_count);
               }
             } catch (error) {
               console.error('Failed to clear downloads:', error);
@@ -534,7 +534,7 @@
               });
               
               if (response.ok) {
-                console.log('🚫 Download cancelled:', downloadId);
+                console.log('Download cancelled:', downloadId);
               } else {
                 alert('Failed to cancel download');
               }
@@ -546,25 +546,37 @@
           const refreshDownloads = () => {
             if (socket && socket.connected) {
               socket.emit('get_downloads');
-              console.log('🔄 Refreshing downloads...');
+              console.log('Refreshing downloads...');
+            }
+          };
+
+          // Copy download link to clipboard
+          const copyDownloadLink = async (downloadId) => {
+            try {
+              const downloadUrl = `${window.location.origin}/api/downloads/${downloadId}/file`;
+              await navigator.clipboard.writeText(downloadUrl);
+              alert('Download link copied to clipboard!');
+            } catch (error) {
+              console.error('Failed to copy link:', error);
+              alert('Failed to copy link to clipboard');
             }
           };
 
           // Enhanced utility functions
           const getStatusIcon = (status) => {
             const icons = {
-              'pending': '⏳',
-              'queued': '📋',
-              'starting': '🚀',
-              'downloading': '⬇️',
-              'extracting': '🔍',
-              'extracting_links': '🔗',
-              'extracting_profile': '👤',
-              'completed': '✅',
-              'error': '❌',
-              'cancelled': '⏹️'
+              'pending': 'โณ',
+              'queued': 'ๅ',
+              'starting': 'ร',
+              'downloading': 'โฌ๏ธ',
+              'extracting': 'ๅ',
+              'extracting_links': 'ๅ',
+              'extracting_profile': 'ค',
+              'completed': 'โ',
+              'error': 'โ',
+              'cancelled': 'โน๏ธ'
             };
-            return icons[status] || '❓';
+            return icons[status] || 'โ';
           };
 
           const getStatusColor = (status) => {
@@ -669,7 +681,7 @@
                     
                     {download.filename && (
                       <p className="text-xs text-gray-500 truncate mt-1" title={download.filename}>
-                        📁 {download.filename}
+                        ้ {download.filename}
                       </p>
                     )}
                   </div>
@@ -681,7 +693,7 @@
                         className="text-gray-400 hover:text-red-500 transition-colors text-sm"
                         title="Cancel download"
                       >
-                        ⏹️
+                        โน๏ธ
                       </button>
                     )}
                     <button 
@@ -689,7 +701,7 @@
                       className="text-gray-400 hover:text-blue-500 transition-colors text-sm"
                       title={expanded ? "Collapse details" : "Expand details"}
                     >
-                      {expanded ? '▲' : '▼'}
+                      {expanded ? 'โฒ' : 'โผ'}
                     </button>
                   </div>
                 </div>
@@ -707,15 +719,37 @@
                       <span className="font-medium">{Math.round(download.percentage || download.progress || 0)}%</span>
                       <div className="flex space-x-3">
                         {download.downloaded_bytes > 0 && (
-                          <span>📦 {formatBytes(download.downloaded_bytes)}</span>
+                          <span>้ฆ {formatBytes(download.downloaded_bytes)}</span>
                         )}
                         {download.speed > 0 && (
-                          <span>⚡ {formatSpeed(download.speed)}</span>
+                          <span>โก {formatSpeed(download.speed)}</span>
                         )}
                         {download.eta > 0 && (
-                          <span>⏱️ {formatTime(download.eta)}</span>
+                          <span>โฑ๏ธ {formatTime(download.eta)}</span>
                         )}
                       </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Download Button for Completed Videos */}
+                {download.status === 'completed' && download.filename && (
+                  <div className="mt-2 pt-2 border-t border-gray-200">
+                    <div className="flex space-x-2">
+                      <a
+                        href={`${API_BASE}/downloads/${download.id}/file`}
+                        download
+                        className="flex-1 bg-green-500 text-white text-sm py-2 px-3 rounded hover:bg-green-600 transition-colors text-center font-medium"
+                      >
+                        ๅฅ Download Video
+                      </a>
+                      <button
+                        onClick={() => copyDownloadLink(download.id)}
+                        className="bg-blue-500 text-white text-sm py-2 px-3 rounded hover:bg-blue-600 transition-colors"
+                        title="Copy download link"
+                      >
+                        ๅ
+                      </button>
                     </div>
                   </div>
                 )}
@@ -780,14 +814,14 @@
                   
                   {download.status === 'completed' && (
                     <span className="text-xs text-green-600 font-medium flex items-center">
-                      <span className="mr-1">✨</span>
+                      <span className="mr-1">โจ</span>
                       Done {download.total_time && `in ${formatTime(download.total_time)}`}
                     </span>
                   )}
                   
                   {download.status === 'error' && (
                     <span className="text-xs text-red-500 truncate max-w-32" title={download.error}>
-                      ❌ Failed
+                      โ Failed
                     </span>
                   )}
                 </div>
@@ -825,7 +859,7 @@
                 {/* Settings Panel */}
                 <div className="bg-white rounded-xl shadow-lg p-6 mb-8 border border-gray-100">
                   <div className="flex items-center mb-4">
-                    <span className="text-lg font-semibold">⚙️ Settings</span>
+                    <span className="text-lg font-semibold">Settings</span>
                   </div>
                   
                   <div className="grid md:grid-cols-2 gap-4">
@@ -852,11 +886,11 @@
                       <div className="border-b border-gray-200">
                         <div className="flex flex-wrap">
                           {[
-                            { id: 'single', label: 'Single Video', icon: '🎥' },
-                            { id: 'batch', label: 'Batch Download', icon: '📥' },
-                            { id: 'profile', label: 'Profile', icon: '👤' },
-                            { id: 'webpage', label: 'Webpage', icon: '🔗' },
-                            { id: 'info', label: 'Video Info', icon: 'ℹ️' }
+                            { id: 'single', label: 'Single Video', icon: 'Video' },
+                            { id: 'batch', label: 'Batch Download', icon: 'Download' },
+                            { id: 'profile', label: 'Profile', icon: 'User' },
+                            { id: 'webpage', label: 'Webpage', icon: 'Link' },
+                            { id: 'info', label: 'Video Info', icon: 'Info' }
                           ].map(({ id, label, icon }) => (
                             <button
                               key={id}
@@ -867,7 +901,6 @@
                                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                               }`}
                             >
-                              <span>{icon}</span>
                               <span>{label}</span>
                             </button>
                           ))}
@@ -908,7 +941,6 @@
                               disabled={!singleUrl.trim() || isProcessing || connectionStatus !== 'connected'}
                               className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-3 px-4 rounded-lg hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 font-medium"
                             >
-                              <span>📥</span>
                               <span>{isProcessing ? 'Starting Download...' : 'Download Video'}</span>
                             </button>
                           </div>
@@ -935,7 +967,6 @@
                               disabled={!batchUrls.trim() || isProcessing || connectionStatus !== 'connected'}
                               className="w-full bg-gradient-to-r from-green-500 to-teal-600 text-white py-3 px-4 rounded-lg hover:from-green-600 hover:to-teal-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 font-medium"
                             >
-                              <span>📦</span>
                               <span>{isProcessing ? 'Starting Batch...' : 'Download All Videos'}</span>
                             </button>
                           </div>
@@ -977,7 +1008,6 @@
                               disabled={!profileUrl.trim() || isProcessing || connectionStatus !== 'connected'}
                               className="w-full bg-gradient-to-r from-purple-500 to-pink-600 text-white py-3 px-4 rounded-lg hover:from-purple-600 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 font-medium"
                             >
-                              <span>👤</span>
                               <span>{isProcessing ? 'Starting Profile Download...' : 'Download Profile Videos'}</span>
                             </button>
                           </div>
@@ -1020,7 +1050,6 @@
                               disabled={!webpageUrl.trim() || isProcessing || connectionStatus !== 'connected'}
                               className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white py-3 px-4 rounded-lg hover:from-orange-600 hover:to-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 font-medium"
                             >
-                              <span>🔗</span>
                               <span>{isProcessing ? 'Starting Extraction...' : 'Extract & Download'}</span>
                             </button>
                           </div>
@@ -1048,7 +1077,6 @@
                               disabled={!infoUrl.trim() || isProcessing || connectionStatus !== 'connected'}
                               className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-3 px-4 rounded-lg hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 font-medium"
                             >
-                              <span>ℹ️</span>
                               <span>{isProcessing ? 'Getting Info...' : 'Get Video Info'}</span>
                             </button>
 
@@ -1087,13 +1115,24 @@
                           )}
                         </h3>
                         <div className="flex space-x-2">
+                          {/* Download All ZIP button */}
+                          {downloads.filter(d => d.status === 'completed').length > 0 && (
+                            <a
+                              href={`${API_BASE}/downloads/all/zip`}
+                              download="downloaded_videos.zip"
+                              className="text-green-600 hover:text-green-800 transition-colors text-sm bg-green-50 px-2 py-1 rounded"
+                              title="Download all videos as ZIP"
+                            >
+                              ZIP
+                            </a>
+                          )}
                           {downloads.length > 0 && (
                             <button
                               onClick={clearDownloads}
                               className="text-gray-400 hover:text-red-500 transition-colors"
                               title="Clear completed downloads"
                             >
-                              🗑️
+                              Clear
                             </button>
                           )}
                           <button
@@ -1101,7 +1140,7 @@
                             className="text-gray-400 hover:text-blue-500 transition-colors"
                             title="Refresh downloads"
                           >
-                            🔄
+                            Refresh
                           </button>
                         </div>
                       </div>
@@ -1131,7 +1170,7 @@
 
                 {/* Help/Tips Panel */}
                 <div className="mt-8 bg-white rounded-xl shadow-lg p-6 border border-gray-100">
-                  <h3 className="text-lg font-semibold mb-4">💡 Tips & Supported Platforms</h3>
+                  <h3 className="text-lg font-semibold mb-4">Tips & Supported Platforms</h3>
                   <div className="grid md:grid-cols-2 gap-6">
                     <div>
                       <h4 className="font-medium mb-2 text-blue-600">Supported Platforms</h4>
@@ -1159,11 +1198,12 @@
                       </ul>
                     </div>
                     <div>
-                      <h4 className="font-medium mb-2 text-purple-600">Usage Tips</h4>
+                      <h4 className="font-medium mb-2 text-purple-600">How to Download</h4>
                       <ul className="space-y-2 text-sm text-gray-600">
                         <li>• Copy the exact URL from the platform's share button</li>
-                        <li>• Use batch download for multiple videos at once</li>
-                        <li>• Webpage extraction finds embedded videos on any site</li>
+                        <li>• Click the green "Download Video" button when completed</li>
+                        <li>• Use "ZIP" button to download all videos at once</li>
+                        <li>• Use batch download for multiple videos</li>
                       </ul>
                     </div>
                   </div>
@@ -1172,6 +1212,7 @@
             </div>
           );
         };
+        
         // Render the app
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<VideoDownloaderUI />);
