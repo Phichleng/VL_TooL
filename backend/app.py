@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Flask Backend for Multi-Platform Video Downloader
-Fixed auto-download functionality
+Enhanced with improved real-time progress tracking
 """
 
 import os
@@ -15,6 +15,8 @@ from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory, send_file, make_response
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
+import os
+from flask import send_file
 import zipfile
 import io
 import logging
@@ -40,6 +42,7 @@ active_downloads = {}
 download_queue = []
 global_downloader = None
 
+# Update the progress tracker to emit file ready event
 class EnhancedProgressTracker:
     """Enhanced progress tracker with better error handling and status updates"""
     
@@ -51,7 +54,6 @@ class EnhancedProgressTracker:
         self.last_percentage = 0
         self.total_bytes = 0
         self.downloaded_bytes = 0
-        self.completed = False
         
     def progress_hook(self, d):
         """Enhanced progress hook for yt-dlp with better status tracking"""
@@ -118,8 +120,7 @@ class EnhancedProgressTracker:
                 filename = ''
                 filepath = ''
                 if d.get('filename'):
-                    filepath = d['filename']
-                    filename = Path(filepath).name
+                    filename = Path(d['filename']).name
                 
                 total_time = time.time() - self.start_time
                 
@@ -127,23 +128,22 @@ class EnhancedProgressTracker:
                     'id': self.download_id,
                     'status': 'completed',
                     'filename': filename,
-                    'filepath': filepath,
                     'percentage': 100,
                     'progress': 100,
                     'total_time': total_time,
                     'downloaded_bytes': self.total_bytes or self.downloaded_bytes,
                     'total_bytes': self.total_bytes or self.downloaded_bytes,
-                    'file_ready': True
+                    'total_bytes': self.total_bytes or self.downloaded_bytes,
                 }
                 
                 # Update global state
                 if self.download_id in active_downloads:
                     active_downloads[self.download_id].update(completion_data)
                 
-                # Emit completion status
+                
                 self.socketio.emit('download_status', completion_data)
                 
-                # Emit file ready event for auto-download
+                
                 self.socketio.emit('file_ready', {
                     'id': self.download_id,
                     'filename': filename,
@@ -227,6 +227,7 @@ def handle_preflight():
         response.headers.add('Access-Control-Allow-Methods', "*")
         return response
 
+
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
@@ -298,8 +299,7 @@ def download_single_video():
             'total_bytes': 0,
             'speed': 0,
             'eta': 0,
-            'filename': '',
-            'filepath': ''
+            'eta': 0,
         }
         
         print(f"🚀 Starting download: {download_id[:8]} - {url}")
@@ -321,7 +321,7 @@ def download_single_video():
                     'status': 'starting'
                 })
                 
-                print(f"🔥 Download worker started for {download_id[:8]}")
+                
                 
                 # Create enhanced progress tracker
                 progress_tracker = EnhancedProgressTracker(download_id, socketio)
@@ -339,8 +339,7 @@ def download_single_video():
                 success = custom_downloader.download_video(
                     url=url,
                     custom_filename=custom_filename,
-                    remove_watermark=remove_watermark,
-                    download_id=download_id
+                    custom_filename=custom_filename,
                 )
                 
                 print(f"📋 Download result for {download_id[:8]}: {success}")
@@ -349,43 +348,13 @@ def download_single_video():
                 if success and download_id in active_downloads:
                     current_status = active_downloads[download_id]['status']
                     if current_status not in ['completed', 'error']:
-                        # Find the downloaded file
-                        download_path = global_downloader.download_path
-                        potential_files = list(download_path.glob('*'))
-                        
-                        if potential_files:
-                            # Get the most recent file
-                            latest_file = max(potential_files, key=lambda p: p.stat().st_mtime)
-                            filename = latest_file.name
-                            filepath = str(latest_file)
-                        else:
-                            filename = 'unknown_file'
-                            filepath = ''
-                        
-                        active_downloads[download_id].update({
-                            'status': 'completed',
-                            'progress': 100,
-                            'percentage': 100,
-                            'filename': filename,
-                            'filepath': filepath,
-                            'file_ready': True
-                        })
-                        
+                        active_downloads[download_id]['status'] = 'completed'
+                        active_downloads[download_id]['progress'] = 100
                         socketio.emit('download_status', {
                             'id': download_id,
                             'status': 'completed',
                             'progress': 100,
-                            'percentage': 100,
-                            'filename': filename,
-                            'file_ready': True
-                        })
-                        
-                        # Emit file ready event
-                        socketio.emit('file_ready', {
-                            'id': download_id,
-                            'filename': filename,
-                            'download_url': f'/api/downloads/{download_id}/file',
-                            'auto_download': True
+                            'progress': 100,
                         })
                         
                 elif not success and download_id in active_downloads:
@@ -429,7 +398,430 @@ def download_single_video():
         logger.error(f"Error starting download: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-# ... (rest of the route handlers remain the same as in your original code)
+
+@app.route('/api/download/batch', methods=['POST'])
+def download_batch_videos():
+    """Download multiple videos with progress tracking"""
+    try:
+        data = request.json
+        urls = data.get('urls', [])
+        remove_watermark = data.get('remove_watermark', False)
+        
+        if not urls or not isinstance(urls, list):
+            return jsonify({'error': 'URLs array is required'}), 400
+        
+        urls = [url.strip() for url in urls if url.strip()]
+        
+        if not urls:
+            return jsonify({'error': 'No valid URLs provided'}), 400
+        
+        batch_id = str(uuid.uuid4())
+        download_ids = []
+        
+        print(f"📦 Starting batch download: {batch_id[:8]} ({len(urls)} videos)")
+        
+        def batch_download_worker():
+            try:
+                for i, url in enumerate(urls):
+                    download_id = str(uuid.uuid4())
+                    download_ids.append(download_id)
+                    
+                    # Add to active downloads
+                    active_downloads[download_id] = {
+                        'id': download_id,
+                        'url': url,
+                        'status': 'queued',
+                        'platform': global_downloader.detect_platform(url),
+                        'created_at': datetime.now().isoformat(),
+                        'batch_id': batch_id,
+                        'batch_index': i + 1,
+                        'batch_total': len(urls),
+                        'remove_watermark': remove_watermark,
+                        'progress': 0,
+                        'downloaded_bytes': 0,
+                        'total_bytes': 0,
+                        'speed': 0,
+                        'eta': 0,
+                        'filename': ''
+                    }
+                    
+                    # Emit batch progress
+                    socketio.emit('batch_progress', {
+                        'batch_id': batch_id,
+                        'current': i + 1,
+                        'total': len(urls),
+                        'url': url
+                    })
+                    
+                    try:
+                        # Update to starting status
+                        active_downloads[download_id]['status'] = 'starting'
+                        socketio.emit('download_status', {
+                            'id': download_id,
+                            'status': 'starting'
+                        })
+                        
+                        # Create progress tracker
+                        progress_tracker = EnhancedProgressTracker(download_id, socketio)
+                        
+                        # Create custom downloader
+                        custom_downloader = VideoDownloader(
+                            download_path=global_downloader.download_path,
+                            remove_watermarks=remove_watermark
+                        )
+                        custom_downloader.base_options['progress_hooks'] = [progress_tracker.progress_hook]
+                        
+                        success = custom_downloader.download_video(
+                            url=url,
+                            remove_watermark=remove_watermark
+                        )
+                        
+                        if success:
+                            if active_downloads[download_id]['status'] != 'completed':
+                                active_downloads[download_id]['status'] = 'completed'
+                                active_downloads[download_id]['progress'] = 100
+                                socketio.emit('download_status', {
+                                    'id': download_id,
+                                    'status': 'completed',
+                                    'progress': 100
+                                })
+                        else:
+                            active_downloads[download_id]['status'] = 'error'
+                            active_downloads[download_id]['error'] = 'Download failed'
+                            socketio.emit('download_status', {
+                                'id': download_id,
+                                'status': 'error',
+                                'error': 'Download failed'
+                            })
+                            
+                    except Exception as e:
+                        error_msg = str(e)
+                        active_downloads[download_id]['status'] = 'error'
+                        active_downloads[download_id]['error'] = error_msg
+                        socketio.emit('download_status', {
+                            'id': download_id,
+                            'status': 'error',
+                            'error': error_msg
+                        })
+                    
+                    # Delay between downloads
+                    time.sleep(2)
+                
+                # Emit batch completion
+                socketio.emit('batch_complete', {
+                    'batch_id': batch_id,
+                    'download_ids': download_ids
+                })
+                
+                print(f"✅ Batch download completed: {batch_id[:8]}")
+                
+            except Exception as e:
+                logger.error(f"Batch download error: {str(e)}")
+                socketio.emit('batch_error', {
+                    'batch_id': batch_id,
+                    'error': str(e)
+                })
+        
+        # Start batch download
+        thread = threading.Thread(target=batch_download_worker, name=f"Batch-{batch_id[:8]}")
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'message': 'Batch download started',
+            'batch_id': batch_id,
+            'total_urls': len(urls)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error starting batch download: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/download/profile', methods=['POST'])
+def download_profile_videos():
+    """Download videos from a profile with progress tracking"""
+    try:
+        data = request.json
+        profile_url = data.get('profile_url', '').strip()
+        max_videos = data.get('max_videos')
+        remove_watermark = data.get('remove_watermark', False)
+        
+        if not profile_url:
+            return jsonify({'error': 'Profile URL is required'}), 400
+        
+        if max_videos:
+            try:
+                max_videos = int(max_videos)
+            except ValueError:
+                max_videos = None
+        
+        download_id = str(uuid.uuid4())
+        
+        active_downloads[download_id] = {
+            'id': download_id,
+            'url': profile_url,
+            'status': 'queued',
+            'platform': global_downloader.detect_platform(profile_url),
+            'created_at': datetime.now().isoformat(),
+            'type': 'profile',
+            'max_videos': max_videos,
+            'remove_watermark': remove_watermark,
+            'progress': 0,
+            'downloaded_bytes': 0,
+            'total_bytes': 0,
+            'speed': 0,
+            'eta': 0,
+            'filename': ''
+        }
+        
+        print(f"👤 Starting profile download: {download_id[:8]} - {profile_url}")
+        
+        def profile_download_worker():
+            try:
+                # Update status
+                active_downloads[download_id]['status'] = 'extracting_profile'
+                socketio.emit('download_status', {
+                    'id': download_id,
+                    'status': 'extracting_profile'
+                })
+                
+                # Create progress tracker
+                progress_tracker = EnhancedProgressTracker(download_id, socketio)
+                
+                # Create custom downloader
+                custom_downloader = VideoDownloader(
+                    download_path=global_downloader.download_path,
+                    remove_watermarks=remove_watermark
+                )
+                custom_downloader.base_options['progress_hooks'] = [progress_tracker.progress_hook]
+                
+                success = custom_downloader.download_profile_videos(
+                    profile_url=profile_url,
+                    max_videos=max_videos
+                )
+                
+                if success:
+                    if active_downloads[download_id]['status'] != 'completed':
+                        active_downloads[download_id]['status'] = 'completed'
+                        active_downloads[download_id]['progress'] = 100
+                        socketio.emit('download_status', {
+                            'id': download_id,
+                            'status': 'completed',
+                            'progress': 100
+                        })
+                else:
+                    active_downloads[download_id]['status'] = 'error'
+                    active_downloads[download_id]['error'] = 'Profile download failed'
+                    socketio.emit('download_status', {
+                        'id': download_id,
+                        'status': 'error',
+                        'error': 'Profile download failed'
+                    })
+                    
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"Profile download error: {error_msg}")
+                active_downloads[download_id]['status'] = 'error'
+                active_downloads[download_id]['error'] = error_msg
+                socketio.emit('download_status', {
+                    'id': download_id,
+                    'status': 'error',
+                    'error': error_msg
+                })
+        
+        thread = threading.Thread(target=profile_download_worker, name=f"Profile-{download_id[:8]}")
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'message': 'Profile download started',
+            'download_id': download_id
+        })
+        
+    except Exception as e:
+        logger.error(f"Error starting profile download: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/download/webpage', methods=['POST'])
+def download_webpage_videos():
+    """Extract and download videos from webpage with progress tracking"""
+    try:
+        data = request.json
+        webpage_url = data.get('webpage_url', '').strip()
+        max_videos = data.get('max_videos', 10)
+        remove_watermark = data.get('remove_watermark', False)
+        
+        if not webpage_url:
+            return jsonify({'error': 'Webpage URL is required'}), 400
+        
+        try:
+            max_videos = int(max_videos)
+        except ValueError:
+            max_videos = 10
+        
+        download_id = str(uuid.uuid4())
+        
+        active_downloads[download_id] = {
+            'id': download_id,
+            'url': webpage_url,
+            'status': 'queued',
+            'platform': 'webpage',
+            'created_at': datetime.now().isoformat(),
+            'type': 'webpage',
+            'max_videos': max_videos,
+            'remove_watermark': remove_watermark,
+            'progress': 0,
+            'downloaded_bytes': 0,
+            'total_bytes': 0,
+            'speed': 0,
+            'eta': 0,
+            'filename': ''
+        }
+        
+        print(f"🌐 Starting webpage extraction: {download_id[:8]} - {webpage_url}")
+        
+        def webpage_download_worker():
+            try:
+                # Update status
+                active_downloads[download_id]['status'] = 'extracting_links'
+                socketio.emit('download_status', {
+                    'id': download_id,
+                    'status': 'extracting_links'
+                })
+                
+                # Create progress tracker
+                progress_tracker = EnhancedProgressTracker(download_id, socketio)
+                
+                # Create custom downloader
+                custom_downloader = VideoDownloader(
+                    download_path=global_downloader.download_path,
+                    remove_watermarks=remove_watermark
+                )
+                custom_downloader.base_options['progress_hooks'] = [progress_tracker.progress_hook]
+                
+                success = custom_downloader.download_from_webpage(
+                    url=webpage_url,
+                    max_videos=max_videos
+                )
+                
+                if success:
+                    if active_downloads[download_id]['status'] != 'completed':
+                        active_downloads[download_id]['status'] = 'completed'
+                        active_downloads[download_id]['progress'] = 100
+                        socketio.emit('download_status', {
+                            'id': download_id,
+                            'status': 'completed',
+                            'progress': 100
+                        })
+                else:
+                    active_downloads[download_id]['status'] = 'error'
+                    active_downloads[download_id]['error'] = 'Webpage extraction failed'
+                    socketio.emit('download_status', {
+                        'id': download_id,
+                        'status': 'error',
+                        'error': 'Webpage extraction failed'
+                    })
+                    
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"Webpage download error: {error_msg}")
+                active_downloads[download_id]['status'] = 'error'
+                active_downloads[download_id]['error'] = error_msg
+                socketio.emit('download_status', {
+                    'id': download_id,
+                    'status': 'error',
+                    'error': error_msg
+                })
+        
+        thread = threading.Thread(target=webpage_download_worker, name=f"Webpage-{download_id[:8]}")
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'message': 'Webpage extraction started',
+            'download_id': download_id
+        })
+        
+    except Exception as e:
+        logger.error(f"Error starting webpage download: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/video-info', methods=['POST'])
+def get_video_info():
+    """Get video information without downloading"""
+    try:
+        data = request.json
+        url = data.get('url', '').strip()
+        
+        if not url:
+            return jsonify({'error': 'URL is required'}), 400
+        
+        info = global_downloader.get_video_info(url)
+        
+        if info:
+            return jsonify(info)
+        else:
+            return jsonify({'error': 'Could not extract video information'}), 400
+            
+    except Exception as e:
+        logger.error(f"Error getting video info: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/downloads', methods=['GET'])
+def list_downloads():
+    """Get list of all downloads"""
+    try:
+        return jsonify({
+            'active_downloads': list(active_downloads.values()),
+            'total_active': len(active_downloads)
+        })
+    except Exception as e:
+        logger.error(f"Error listing downloads: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/downloads/<download_id>', methods=['DELETE'])
+def cancel_download(download_id):
+    """Cancel a download"""
+    try:
+        if download_id in active_downloads:
+            active_downloads[download_id]['status'] = 'cancelled'
+            socketio.emit('download_status', {
+                'id': download_id,
+                'status': 'cancelled'
+            })
+            print(f"🚫 Download cancelled: {download_id[:8]}")
+            return jsonify({'message': 'Download cancelled'})
+        else:
+            return jsonify({'error': 'Download not found'}), 404
+    except Exception as e:
+        logger.error(f"Error cancelling download: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/downloads/clear', methods=['POST'])
+def clear_downloads():
+    """Clear completed/failed downloads"""
+    try:
+        global active_downloads
+        
+        # Keep only active downloads
+        before_count = len(active_downloads)
+        active_downloads = {
+            k: v for k, v in active_downloads.items() 
+            if v['status'] in ['queued', 'starting', 'downloading', 'extracting', 'extracting_links', 'extracting_profile']
+        }
+        cleared_count = before_count - len(active_downloads)
+        
+        socketio.emit('downloads_cleared')
+        print(f"🧹 Cleared {cleared_count} completed/failed downloads")
+        
+        return jsonify({
+            'message': 'Downloads cleared',
+            'cleared_count': cleared_count,
+            'remaining': len(active_downloads)
+        })
+    except Exception as e:
+        logger.error(f"Error clearing downloads: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/downloads/<download_id>/file', methods=['GET'])
 def download_file(download_id):
@@ -494,8 +886,128 @@ def download_file(download_id):
     except Exception as e:
         logger.error(f"Error serving file {download_id}: {str(e)}")
         return jsonify({'error': str(e)}), 500
+        return jsonify({'error': str(e)}), 500
+    
+# Add a new endpoint for checking file availability
+@app.route('/api/downloads/<download_id>/check', methods=['GET'])
+def check_file_availability(download_id):
+    """Check if a file is ready for download"""
+    try:
+        download = active_downloads.get(download_id)
+        if not download:
+            return jsonify({'available': False, 'error': 'Download not found'}), 404
+        
+        if download['status'] != 'completed':
+            return jsonify({
+                'available': False, 
+                'status': download['status'],
+                'progress': download.get('progress', 0)
+            })
+        
+        filename = download.get('filename')
+        if not filename:
+            return jsonify({'available': False, 'error': 'No filename available'})
+        
+        file_path = global_downloader.download_path / filename
+        if not file_path.exists():
+            return jsonify({'available': False, 'error': 'File not found on server'})
+        
+        return jsonify({
+            'available': True,
+            'filename': filename,
+            'size': file_path.stat().st_size,
+            'download_url': f'/api/downloads/{download_id}/file'
+        })
+        
+    except Exception as e:
+        return jsonify({'available': False, 'error': str(e)}), 500
+    
+@app.route('/api/downloads/all/zip', methods=['GET'])
+def download_all_files():
+    """Download all files as a zip archive"""
+    try:
+        downloads_path = global_downloader.download_path
+        
+        # Create zip file in memory
+        zip_buffer = io.BytesIO()
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for file_path in downloads_path.glob('*'):
+                if file_path.is_file() and file_path.suffix in ['.mp4', '.webm', '.mkv', '.avi']:
+                    zip_file.write(file_path, file_path.name)
+        
+        zip_buffer.seek(0)
+        
+        return send_file(
+            io.BytesIO(zip_buffer.read()),
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='downloaded_videos.zip'
+        )
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-# ... (rest of the code remains the same)
+@app.route('/api/files', methods=['GET'])
+def list_downloaded_files():
+    """List all downloaded files"""
+    try:
+        downloads_path = global_downloader.download_path
+        files = []
+        
+        for file_path in downloads_path.glob('*'):
+            if file_path.is_file():
+                files.append({
+                    'name': file_path.name,
+                    'size': file_path.stat().st_size,
+                    'modified': file_path.stat().st_mtime
+                })
+        
+        return jsonify({'files': files})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+# WebSocket event handlers
+@socketio.on('connect')
+def handle_connect():
+    """Handle WebSocket connection"""
+    print(f"🔌 Client connected: {request.sid}")
+    emit('connected', {
+        'message': 'Connected to video downloader',
+        'active_downloads': len(active_downloads)
+    })
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Handle WebSocket disconnection"""
+    print(f"🔌 Client disconnected: {request.sid}")
+
+@socketio.on('get_downloads')
+def handle_get_downloads():
+    """Send current downloads to client"""
+    emit('downloads_update', {
+        'downloads': list(active_downloads.values()),
+        'total': len(active_downloads)
+    })
+    print(f"📤 Sent {len(active_downloads)} downloads to client")
+
+# Error handlers
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Endpoint not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/', methods=['GET'])
+def serve_frontend():
+    """Serve the frontend HTML file"""
+    return send_from_directory('.', 'index.html')
+
+@app.route('/<path:path>', methods=['GET'])
+def serve_static(path):
+    """Serve static files"""
 
 def main():
     """Main function to run the Flask server"""
@@ -512,6 +1024,19 @@ def main():
     
     print(f"🌐 Server will be available at: http://{host}:{port}")
     print(f"📡 WebSocket endpoint: ws://{host}:{port}")
+    print(f"📡 WebSocket endpoint: ws://{host}:{port}")
+    print("\n💡 API Endpoints:")
+    print("   GET  /                    - Frontend interface")
+    print("   GET  /api/health          - Health check")
+    print("   GET  /api/settings        - Get settings") 
+    print("   POST /api/settings        - Update settings")
+    print("   POST /api/download/single - Download single video")
+    print("   POST /api/download/batch  - Download multiple videos")
+    print("   POST /api/download/profile - Download profile videos")
+    print("   POST /api/download/webpage - Extract from webpage")
+    print("   POST /api/video-info      - Get video information")
+    print("   GET  /api/downloads       - List active downloads")
+    print("   POST /api/downloads/clear - Clear completed downloads")
     
     # Run the server
     try:
@@ -519,7 +1044,7 @@ def main():
             app,
             host=host,
             port=port,
-            debug=False,
+            port=port,
             allow_unsafe_werkzeug=True
         )
     except KeyboardInterrupt:
