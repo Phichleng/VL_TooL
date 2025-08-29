@@ -111,14 +111,8 @@ class EnhancedProgressTracker:
                     print(f"[{self.download_id[:8]}] {percentage:.1f}% - {self._format_bytes(speed)}/s")
                     
             elif status == 'finished':
-                if self.completed:
-                    return  # Avoid duplicate completion events
-                
-                self.completed = True
-                
                 # Download completed
                 filename = ''
-                filepath = ''
                 if d.get('filename'):
                     filename = Path(d['filename']).name
                 
@@ -133,21 +127,20 @@ class EnhancedProgressTracker:
                     'total_time': total_time,
                     'downloaded_bytes': self.total_bytes or self.downloaded_bytes,
                     'total_bytes': self.total_bytes or self.downloaded_bytes,
-                    'total_bytes': self.total_bytes or self.downloaded_bytes,
+                    'file_ready': True  # Add this flag for auto-download trigger
                 }
                 
                 # Update global state
                 if self.download_id in active_downloads:
                     active_downloads[self.download_id].update(completion_data)
                 
-                
+                # Emit completion status with file ready flag
                 self.socketio.emit('download_status', completion_data)
                 
-                
+                # Emit special event for auto-download
                 self.socketio.emit('file_ready', {
                     'id': self.download_id,
                     'filename': filename,
-                    'filepath': filepath,
                     'download_url': f'/api/downloads/{self.download_id}/file',
                     'auto_download': True
                 })
@@ -227,7 +220,7 @@ def handle_preflight():
         response.headers.add('Access-Control-Allow-Methods', "*")
         return response
 
-
+# Add general CORS headers to all responses
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
@@ -299,7 +292,7 @@ def download_single_video():
             'total_bytes': 0,
             'speed': 0,
             'eta': 0,
-            'eta': 0,
+            'filename': ''
         }
         
         print(f"🚀 Starting download: {download_id[:8]} - {url}")
@@ -321,7 +314,7 @@ def download_single_video():
                     'status': 'starting'
                 })
                 
-                
+                print(f"📥 Download worker started for {download_id[:8]}")
                 
                 # Create enhanced progress tracker
                 progress_tracker = EnhancedProgressTracker(download_id, socketio)
@@ -339,7 +332,7 @@ def download_single_video():
                 success = custom_downloader.download_video(
                     url=url,
                     custom_filename=custom_filename,
-                    custom_filename=custom_filename,
+                    remove_watermark=remove_watermark
                 )
                 
                 print(f"📋 Download result for {download_id[:8]}: {success}")
@@ -350,11 +343,12 @@ def download_single_video():
                     if current_status not in ['completed', 'error']:
                         active_downloads[download_id]['status'] = 'completed'
                         active_downloads[download_id]['progress'] = 100
+                        active_downloads[download_id]['percentage'] = 100
                         socketio.emit('download_status', {
                             'id': download_id,
                             'status': 'completed',
                             'progress': 100,
-                            'progress': 100,
+                            'percentage': 100
                         })
                         
                 elif not success and download_id in active_downloads:
@@ -397,7 +391,6 @@ def download_single_video():
     except Exception as e:
         logger.error(f"Error starting download: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/api/download/batch', methods=['POST'])
 def download_batch_videos():
@@ -823,6 +816,7 @@ def clear_downloads():
         logger.error(f"Error clearing downloads: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/api/downloads/<download_id>/file', methods=['GET'])
 def download_file(download_id):
     """Download the actual video file with proper headers for auto-download"""
@@ -833,26 +827,10 @@ def download_file(download_id):
             return jsonify({'error': 'Download not found'}), 404
         
         filename = download.get('filename')
-        filepath = download.get('filepath')
-        
         if not filename:
             return jsonify({'error': 'No filename available'}), 404
         
-        # Try to find the file
-        if filepath and os.path.exists(filepath):
-            file_path = Path(filepath)
-        else:
-            # Fallback: search in download directory
-            file_path = global_downloader.download_path / filename
-            if not file_path.exists():
-                # Try to find any file with similar name
-                potential_files = list(global_downloader.download_path.glob(f"*{filename}*"))
-                if not potential_files:
-                    potential_files = list(global_downloader.download_path.glob("*.mp4"))
-                    if not potential_files:
-                        return jsonify({'error': 'File not found on server'}), 404
-                file_path = potential_files[0]
-        
+        file_path = global_downloader.download_path / filename
         if not file_path.exists():
             return jsonify({'error': 'File not found on server'}), 404
         
@@ -885,7 +863,6 @@ def download_file(download_id):
         
     except Exception as e:
         logger.error(f"Error serving file {download_id}: {str(e)}")
-        return jsonify({'error': str(e)}), 500
         return jsonify({'error': str(e)}), 500
     
 # Add a new endpoint for checking file availability
@@ -1008,6 +985,7 @@ def serve_frontend():
 @app.route('/<path:path>', methods=['GET'])
 def serve_static(path):
     """Serve static files"""
+    return send_from_directory('.', path)
 
 def main():
     """Main function to run the Flask server"""
@@ -1024,7 +1002,6 @@ def main():
     
     print(f"🌐 Server will be available at: http://{host}:{port}")
     print(f"📡 WebSocket endpoint: ws://{host}:{port}")
-    print(f"📡 WebSocket endpoint: ws://{host}:{port}")
     print("\n💡 API Endpoints:")
     print("   GET  /                    - Frontend interface")
     print("   GET  /api/health          - Health check")
@@ -1037,6 +1014,7 @@ def main():
     print("   POST /api/video-info      - Get video information")
     print("   GET  /api/downloads       - List active downloads")
     print("   POST /api/downloads/clear - Clear completed downloads")
+    print("   DEL  /api/downloads/<id>  - Cancel download")
     
     # Run the server
     try:
@@ -1044,7 +1022,7 @@ def main():
             app,
             host=host,
             port=port,
-            port=port,
+            debug=False,  # Set to False for better performance
             allow_unsafe_werkzeug=True
         )
     except KeyboardInterrupt:
