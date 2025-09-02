@@ -272,9 +272,9 @@ class StreamingVideoExtractor:
                                     'uploader': video_data.get('author', {}).get('unique_id', 'unknown'),
                                     'view_count': video_data.get('statistics', {}).get('play_count', 0)
                                 }
-                        except KeyError as e:
-                            logger.warning(f"Key error in API response from {api_url}: {str(e)}")
-                            continue
+                except KeyError as e:   
+                    logger.warning(f"Key error in API response from {api_url}: {str(e)}")
+                    continue
                 except requests.RequestException as e:
                     logger.warning(f"API endpoint {api_url} failed: {str(e)}")
                     continue
