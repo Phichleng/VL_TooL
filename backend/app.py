@@ -57,11 +57,11 @@ class StreamingVideoExtractor:
         }
     
     def extract_direct_url(self, url):
-        """Extract direct video URL and metadata with improved error handling"""
+        """Extract direct video URL and metadata with enhanced error handling"""
         try:
             platform = self.detect_platform(url)
             
-            # Special handling for TikTok
+            # Special handling for TikTok with fallback methods
             if platform == 'tiktok':
                 return self._extract_tiktok_video(url)
             
@@ -131,182 +131,130 @@ class StreamingVideoExtractor:
             raise e
     
     def _extract_tiktok_video(self, url):
-        """Improved TikTok extraction method with better error handling"""
+        """Enhanced TikTok extraction with multiple fallback methods"""
         try:
-            # Try using yt-dlp first with enhanced options
-            tiktok_options = self.base_options.copy()
-            tiktok_options.update({
-                'extractor_args': {
-                    'tiktok': {
-                        'webpage_url_basename': 'video',
-                        'app_version': '29.3.0',
-                        'manifest_app_version': '2913030'
+            # Method 1: Try standard yt-dlp first
+            try:
+                options = self.base_options.copy()
+                options.update({
+                    'extractor_args': {
+                        'tiktok': {
+                            'api_hostname': 'api16-normal-c-useast1a.tiktokv.com',
+                        }
                     }
-                }
-            })
-            
-            with yt_dlp.YoutubeDL(tiktok_options) as ydl:
-                try:
+                })
+                
+                with yt_dlp.YoutubeDL(options) as ydl:
                     info = ydl.extract_info(url, download=False)
                     
-                    if info and info.get('url'):
-                        # Clean filename
-                        title = info.get('title', 'tiktok_video') or 'tiktok_video'
-                        ext = info.get('ext', 'mp4')
+                    if info and 'url' in info:
+                        return self._format_tiktok_response(info, url)
                         
-                        safe_title = re.sub(r'[^\w\s-]', '', str(title))
-                        safe_title = re.sub(r'[-\s]+', '-', safe_title)
-                        filename = f"{safe_title}.{ext}"
-                        
-                        return {
-                            'direct_url': info['url'],
-                            'title': title,
-                            'filename': filename,
-                            'filesize': info.get('filesize') or info.get('filesize_approx'),
-                            'duration': info.get('duration'),
-                            'platform': 'tiktok',
-                            'headers': {
-                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                                'Referer': 'https://www.tiktok.com/',
-                                'Origin': 'https://www.tiktok.com',
-                                'Accept': 'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5',
-                                'Accept-Language': 'en-US,en;q=0.5',
-                                'Range': 'bytes=0-',
-                                'Sec-Fetch-Dest': 'video',
-                                'Sec-Fetch-Mode': 'no-cors',
-                                'Sec-Fetch-Site': 'same-site'
-                            },
-                            'thumbnail': info.get('thumbnail'),
-                            'uploader': info.get('uploader'),
-                            'view_count': info.get('view_count')
-                        }
-                    else:
-                        logger.warning("yt-dlp succeeded but no URL found in info")
-                        
-                except Exception as ydl_error:
-                    logger.warning(f"yt-dlp extraction failed: {str(ydl_error)}")
-                    # Continue to fallback method
-                    pass
+            except Exception as e:
+                logger.warning(f"Standard TikTok extraction failed: {str(e)}")
             
-            # Fallback method with improved error handling
-            return self._tiktok_fallback_extraction(url)
+            # Method 2: Try direct API approach
+            try:
+                return self._tiktok_api_fallback(url)
+            except Exception as e:
+                logger.warning(f"TikTok API fallback failed: {str(e)}")
+            
+            # Method 3: Try web scraping approach
+            try:
+                return self._tiktok_web_fallback(url)
+            except Exception as e:
+                logger.warning(f"TikTok web fallback failed: {str(e)}")
+            
+            # If all methods fail
+            raise Exception("All TikTok extraction methods failed. TikTok may have updated their API or the video may be private/deleted.")
             
         except Exception as e:
-            logger.error(f"TikTok extraction failed completely: {str(e)}")
-            raise Exception(f"Could not extract TikTok video: {str(e)}")
+            logger.error(f"TikTok extraction completely failed: {str(e)}")
+            raise Exception(f"TikTok video extraction failed: {str(e)}")
     
-    def _tiktok_fallback_extraction(self, url):
-        """Improved fallback method for TikTok video extraction"""
-        try:
-            # Extract video ID from URL
-            video_id = self._extract_tiktok_id(url)
-            if not video_id:
-                # If we can't extract ID, try direct webpage parsing
-                return self._tiktok_webpage_fallback(url)
-            
-            logger.info(f"Extracted TikTok video ID: {video_id}")
-            
-            # Try multiple API endpoints with updated domains
-            api_endpoints = [
-                f"https://api16-normal-c-useast1a.tiktokv.com/aweme/v1/feed/?aweme_id={video_id}",
-                f"https://api16-normal-c-useast2a.tiktokv.com/aweme/v1/feed/?aweme_id={video_id}",
-                f"https://api.tiktokv.com/aweme/v1/feed/?aweme_id={video_id}",
-                f"https://api19-normal-c-useast1a.tiktokv.com/aweme/v1/feed/?aweme_id={video_id}",
-                f"https://www.tiktok.com/api/item/detail/?itemId={video_id}"
-            ]
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'en-US,en;q=0.9',
+    def _format_tiktok_response(self, info, url):
+        """Format TikTok response data"""
+        title = info.get('title', 'tiktok_video')
+        ext = 'mp4'
+        
+        safe_title = re.sub(r'[^\w\s-]', '', title)
+        safe_title = re.sub(r'[-\s]+', '-', safe_title)
+        filename = f"TikTok_{safe_title}.{ext}"
+        
+        return {
+            'direct_url': info['url'],
+            'title': title,
+            'filename': filename,
+            'filesize': info.get('filesize') or info.get('filesize_approx'),
+            'duration': info.get('duration'),
+            'platform': 'tiktok',
+            'headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Referer': 'https://www.tiktok.com/',
-                'Origin': 'https://www.tiktok.com',
-                'Sec-Fetch-Dest': 'empty',
-                'Sec-Fetch-Mode': 'cors',
-                'Sec-Fetch-Site': 'same-site',
-                'Authority': 'api16-normal-c-useast1a.tiktokv.com'
-            }
-            
-            for api_url in api_endpoints:
-                try:
-                    response = requests.get(api_url, headers=headers, timeout=15)
-                    if response.status_code == 200:
-                        try:
-                            data = response.json()
-                        except json.JSONDecodeError:
-                            logger.warning(f"API returned non-JSON response from {api_url}")
-                            continue
-                        
-                        if data.get('aweme_list') and len(data['aweme_list']) > 0:
-                            video_data = data['aweme_list'][0]
-                            video_urls = video_data.get('video', {}).get('play_addr', {}).get('url_list', [])
-                            
-                            if video_urls:
-                                # Get the highest quality URL
-                                direct_url = video_urls[0]
-                                # Remove watermark parameter if present
-                                if 'playwm' in direct_url:
-                                    direct_url = direct_url.replace('playwm', 'play')
-                                
-                                title = video_data.get('desc', f'tiktok_{video_id}') or f'tiktok_{video_id}'
-                                
-                                return {
-                                    'direct_url': direct_url,
-                                    'title': title,
-                                    'filename': f"tiktok_{video_id}.mp4",
-                                    'filesize': None,
-                                    'duration': video_data.get('duration', 0) / 1000 if video_data.get('duration') else None,
-                                    'platform': 'tiktok',
-                                    'headers': {
-                                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                                        'Referer': 'https://www.tiktok.com/',
-                                        'Origin': 'https://www.tiktok.com',
-                                        'Accept': 'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5',
-                                        'Accept-Language': 'en-US,en;q=0.5',
-                                        'Range': 'bytes=0-',
-                                        'Sec-Fetch-Dest': 'video',
-                                        'Sec-Fetch-Mode': 'no-cors',
-                                        'Sec-Fetch-Site': 'same-site'
-                                    },
-                                    'thumbnail': video_data.get('video', {}).get('cover', {}).get('url_list', [None])[0],
-                                    'uploader': video_data.get('author', {}).get('unique_id', 'unknown'),
-                                    'view_count': video_data.get('statistics', {}).get('play_count', 0)
-                                }
-                except KeyError as e:   
-                    logger.warning(f"Key error in API response from {api_url}: {str(e)}")
-                    continue
-                except requests.RequestException as e:
-                    logger.warning(f"API endpoint {api_url} failed: {str(e)}")
-                    continue
-            
-            # If all API attempts fail, try webpage parsing
-            return self._tiktok_webpage_fallback(url)
-            
-        except Exception as e:
-            logger.error(f"TikTok fallback extraction failed: {str(e)}")
-            raise Exception(f"All TikTok extraction methods failed: {str(e)}")
+                'Origin': 'https://www.tiktok.com'
+            },
+            'thumbnail': info.get('thumbnail'),
+            'uploader': info.get('uploader'),
+            'view_count': info.get('view_count')
+        }
     
-    def _extract_tiktok_id(self, url):
-        """Extract TikTok video ID from URL with improved patterns"""
-        patterns = [
-            r'tiktok\.com/.+?/video/(\d+)',
-            r'tiktok\.com/@[^/]+/video/(\d+)',
-            r'vm\.tiktok\.com/([a-zA-Z0-9]+)',
-            r'vt\.tiktok\.com/([a-zA-Z0-9]+)',
-            r'tiktok\.com/t/([a-zA-Z0-9]+)',
-            r'/video/(\d+)'
+    def _tiktok_api_fallback(self, url):
+        """Fallback TikTok API method"""
+        video_id = self._extract_tiktok_id(url)
+        if not video_id:
+            raise Exception("Could not extract TikTok video ID")
+        
+        # Try multiple API endpoints
+        api_endpoints = [
+            f"https://api16-normal-c-useast1a.tiktokv.com/aweme/v1/feed/?aweme_id={video_id}",
+            f"https://api16-core-c-useast1a.tiktokv.com/aweme/v1/feed/?aweme_id={video_id}",
+            f"https://api19-core-c-useast1a.tiktokv.com/aweme/v1/feed/?aweme_id={video_id}"
         ]
         
-        for pattern in patterns:
-            match = re.search(pattern, url)
-            if match:
-                return match.group(1)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://www.tiktok.com/',
+            'Origin': 'https://www.tiktok.com'
+        }
         
-        logger.warning(f"Could not extract TikTok ID from URL: {url}")
-        return None
+        for api_url in api_endpoints:
+            try:
+                response = requests.get(api_url, headers=headers, timeout=15)
+                if response.status_code == 200:
+                    data = response.json()
+                    
+                    if data.get('aweme_list') and len(data['aweme_list']) > 0:
+                        video_data = data['aweme_list'][0]
+                        video_urls = video_data.get('video', {}).get('play_addr', {}).get('url_list', [])
+                        
+                        if video_urls:
+                            # Try to get the best quality URL
+                            direct_url = video_urls[0]
+                            if 'playwm' in direct_url:
+                                direct_url = direct_url.replace('playwm', 'play')
+                            
+                            return {
+                                'direct_url': direct_url,
+                                'title': video_data.get('desc', f'tiktok_video_{video_id}'),
+                                'filename': f"TikTok_{video_id}.mp4",
+                                'filesize': None,
+                                'duration': video_data.get('duration', 0) / 1000 if video_data.get('duration') else None,
+                                'platform': 'tiktok',
+                                'headers': headers,
+                                'thumbnail': video_data.get('video', {}).get('cover', {}).get('url_list', [None])[0],
+                                'uploader': video_data.get('author', {}).get('unique_id', 'unknown'),
+                                'view_count': video_data.get('statistics', {}).get('play_count', 0)
+                            }
+            except Exception as e:
+                logger.warning(f"API endpoint {api_url} failed: {str(e)}")
+                continue
+        
+        raise Exception("All TikTok API endpoints failed")
     
-    def _tiktok_webpage_fallback(self, url):
-        """Parse TikTok webpage directly as last resort"""
+    def _tiktok_web_fallback(self, url):
+        """Web scraping fallback for TikTok"""
         try:
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -316,107 +264,47 @@ class StreamingVideoExtractor:
                 'DNT': '1',
                 'Connection': 'keep-alive',
                 'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1'
             }
             
+            # Follow redirects for short URLs
             session = requests.Session()
-            response = session.get(url, headers=headers, timeout=30)
+            response = session.get(url, headers=headers, timeout=30, allow_redirects=True)
             response.raise_for_status()
             
             html_content = response.text
             
-            # Try to extract video URL from JSON data in HTML
-            json_patterns = [
-                r'<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">(.*?)</script>',
-                r'window\.__INITIAL_STATE__\s*=\s*({.*?});',
+            # Extract video ID from final URL
+            video_id = self._extract_tiktok_id(response.url)
+            if not video_id:
+                video_id = self._extract_tiktok_id(url)
+            
+            # Look for video URL patterns in HTML
+            video_patterns = [
                 r'"downloadAddr":"([^"]+)"',
                 r'"playAddr":"([^"]+)"',
-            ]
-            
-            for pattern in json_patterns:
-                matches = re.findall(pattern, html_content, re.DOTALL)
-                if matches:
-                    try:
-                        # Try to parse as JSON first
-                        if pattern.startswith('<script') or pattern.startswith('window'):
-                            json_data = json.loads(matches[0])
-                            # Navigate through JSON structure to find video URL
-                            video_url = self._find_video_url_in_json(json_data)
-                            if video_url:
-                                if 'playwm' in video_url:
-                                    video_url = video_url.replace('playwm', 'play')
-                                
-                                # Extract title from HTML
-                                title_match = re.search(r'<title>([^<]+)</title>', html_content)
-                                title = title_match.group(1) if title_match else 'tiktok_video'
-                                title = title.replace(' | TikTok', '').strip()
-                                
-                                return {
-                                    'direct_url': video_url,
-                                    'title': title,
-                                    'filename': f"tiktok_{int(time.time())}.mp4",
-                                    'filesize': None,
-                                    'duration': None,
-                                    'platform': 'tiktok',
-                                    'headers': headers,
-                                    'thumbnail': None,
-                                    'uploader': 'unknown',
-                                    'view_count': 0
-                                }
-                        else:
-                            # Direct URL match
-                            video_url = matches[0]
-                            if 'playwm' in video_url:
-                                video_url = video_url.replace('playwm', 'play')
-                            
-                            title_match = re.search(r'<title>([^<]+)</title>', html_content)
-                            title = title_match.group(1) if title_match else 'tiktok_video'
-                            title = title.replace(' | TikTok', '').strip()
-                            
-                            return {
-                                'direct_url': video_url,
-                                'title': title,
-                                'filename': f"tiktok_{int(time.time())}.mp4",
-                                'filesize': None,
-                                'duration': None,
-                                'platform': 'tiktok',
-                                'headers': headers,
-                                'thumbnail': None,
-                                'uploader': 'unknown',
-                                'view_count': 0
-                            }
-                    except (json.JSONDecodeError, KeyError) as e:
-                        logger.warning(f"JSON parsing failed for pattern {pattern}: {str(e)}")
-                        continue
-            
-            # Try direct video URL patterns
-            video_patterns = [
                 r'https://[^"]*\.tiktokcdn\.com/[^"]*\.mp4[^"]*',
-                r'https://v\d{2}\.tiktokcdn\.com/[^"]*',
-                r'"url":"(https://[^"]*tiktokcdn[^"]*\.mp4[^"]*)"'
+                r'https://v\d{2}\.tiktokcdn\.com/[^"]*'
             ]
             
             for pattern in video_patterns:
                 matches = re.findall(pattern, html_content)
                 if matches:
                     video_url = matches[0]
-                    # Clean up the URL
-                    video_url = video_url.replace('\\u002F', '/').replace('\\', '')
+                    # Clean up escaped characters
+                    video_url = video_url.replace('\\u002F', '/').replace('\\/', '/')
+                    
+                    # Remove watermark if possible
                     if 'playwm' in video_url:
                         video_url = video_url.replace('playwm', 'play')
                     
                     # Extract title from HTML
                     title_match = re.search(r'<title>([^<]+)</title>', html_content)
-                    title = title_match.group(1) if title_match else 'tiktok_video'
-                    title = title.replace(' | TikTok', '').strip()
+                    title = title_match.group(1) if title_match else f'tiktok_video_{video_id or "unknown"}'
                     
                     return {
                         'direct_url': video_url,
                         'title': title,
-                        'filename': f"tiktok_{int(time.time())}.mp4",
+                        'filename': f"TikTok_{video_id or 'unknown'}.mp4",
                         'filesize': None,
                         'duration': None,
                         'platform': 'tiktok',
@@ -426,41 +314,49 @@ class StreamingVideoExtractor:
                         'view_count': 0
                     }
             
-            raise Exception("No video URL found in webpage")
+            raise Exception("No video URLs found in webpage")
             
         except Exception as e:
-            logger.error(f"TikTok webpage fallback failed: {str(e)}")
-            raise Exception(f"Webpage parsing failed: {str(e)}")
+            logger.error(f"TikTok web scraping failed: {str(e)}")
+            raise e
     
-    def _find_video_url_in_json(self, data):
-        """Recursively search for video URL in JSON data"""
-        if isinstance(data, dict):
-            for key, value in data.items():
-                if key in ['downloadAddr', 'playAddr', 'videoUrl', 'url'] and isinstance(value, str) and value.startswith('http'):
-                    return value
-                result = self._find_video_url_in_json(value)
-                if result:
-                    return result
-        elif isinstance(data, list):
-            for item in data:
-                result = self._find_video_url_in_json(item)
-                if result:
-                    return result
+    def _extract_tiktok_id(self, url):
+        """Extract TikTok video ID from URL with enhanced patterns"""
+        patterns = [
+            r'tiktok\.com/.+?/video/(\d+)',
+            r'tiktok\.com/@[^/]+/video/(\d+)',
+            r'vm\.tiktok\.com/([a-zA-Z0-9]+)',
+            r'vt\.tiktok\.com/([a-zA-Z0-9]+)',
+            r'tiktok\.com/t/([a-zA-Z0-9]+)',
+            r'/video/(\d+)',
+            r'aweme_id=(\d+)'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+        
         return None
     
     def detect_platform(self, url):
-        """Detect video platform"""
+        """Detect video platform with enhanced patterns"""
         domain = url.lower()
-        if 'tiktok.com' in domain or 'vm.tiktok.com' in domain or 'vt.tiktok.com' in domain:
+        
+        if any(x in domain for x in ['tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com']):
             return 'tiktok'
-        elif 'youtube.com' in domain or 'youtu.be' in domain:
+        elif any(x in domain for x in ['youtube.com', 'youtu.be', 'm.youtube.com']):
             return 'youtube'
-        elif 'instagram.com' in domain:
+        elif any(x in domain for x in ['instagram.com', 'instagr.am']):
             return 'instagram'
-        elif 'facebook.com' in domain or 'fb.watch' in domain:
+        elif any(x in domain for x in ['facebook.com', 'fb.watch', 'm.facebook.com']):
             return 'facebook'
-        elif 'douyin.com' in domain or 'v.douyin.com' in domain:
+        elif any(x in domain for x in ['douyin.com', 'v.douyin.com']):
             return 'douyin'
+        elif any(x in domain for x in ['twitter.com', 'x.com']):
+            return 'twitter'
+        elif 'vimeo.com' in domain:
+            return 'vimeo'
         else:
             return 'unknown'
 
@@ -469,7 +365,7 @@ extractor = StreamingVideoExtractor()
 
 @app.route('/api/download/stream', methods=['POST'])
 def stream_download():
-    """Set up streaming download"""
+    """Set up streaming download with enhanced error handling"""
     try:
         data = request.json
         url = data.get('url', '').strip()
@@ -477,12 +373,22 @@ def stream_download():
         if not url:
             return jsonify({'error': 'URL is required'}), 400
         
-        # Extract video information
+        # Extract video information with better error handling
         try:
             video_info = extractor.extract_direct_url(url)
         except Exception as e:
-            logger.error(f"Extraction error: {str(e)}")
-            return jsonify({'error': f'Could not extract video: {str(e)}'}), 400
+            error_msg = str(e)
+            logger.error(f"Extraction error for {url}: {error_msg}")
+            
+            # Provide more helpful error messages
+            if "TikTok" in error_msg:
+                error_msg = "TikTok extraction failed. The video might be private, deleted, or TikTok has updated their API. Please try again later."
+            elif "Sign in to confirm your age" in error_msg:
+                error_msg = "This video requires age verification. Please try a different video."
+            elif "Video unavailable" in error_msg:
+                error_msg = "This video is not available. It might be private, deleted, or region-restricted."
+            
+            return jsonify({'error': error_msg}), 400
         
         download_id = str(uuid.uuid4())
         
@@ -520,11 +426,11 @@ def stream_download():
         
     except Exception as e:
         logger.error(f"Error setting up stream: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f'Setup failed: {str(e)}'}), 500
 
 @app.route('/api/stream/<download_id>')
 def stream_video(download_id):
-    """Stream video directly to client"""
+    """Stream video directly to client with enhanced error handling"""
     try:
         if download_id not in active_downloads:
             return jsonify({'error': 'Download not found'}), 404
@@ -536,14 +442,15 @@ def stream_video(download_id):
         try:
             video_info = extractor.extract_direct_url(url)
         except Exception as e:
-            logger.error(f"Could not refresh video URL: {str(e)}")
-            return jsonify({'error': f'Could not refresh video URL: {str(e)}'}), 400
+            error_msg = f'Could not refresh video URL: {str(e)}'
+            logger.error(error_msg)
+            return jsonify({'error': error_msg}), 400
         
         direct_url = video_info['direct_url']
         filename = video_info['filename']
         
         def generate_stream():
-            """Stream video data with progress tracking"""
+            """Stream video data with enhanced progress tracking"""
             try:
                 # Update status to streaming
                 active_downloads[download_id]['status'] = 'streaming'
@@ -557,70 +464,78 @@ def stream_video(download_id):
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                     'Accept': '*/*',
                     'Accept-Encoding': 'identity',
-                    'Connection': 'keep-alive',
-                    'Range': 'bytes=0-',  # Support range requests
-                    'Referer': 'https://www.tiktok.com/' if video_info['platform'] == 'tiktok' else '',
-                    'Origin': 'https://www.tiktok.com' if video_info['platform'] == 'tiktok' else ''
+                    'Connection': 'keep-alive'
                 }
                 
                 # Add platform-specific headers
                 if video_info.get('headers'):
                     stream_headers.update(video_info['headers'])
                 
-                # Start streaming
-                with requests.get(direct_url, headers=stream_headers, stream=True, timeout=30) as r:
-                    r.raise_for_status()
-                    
-                    total_size = int(r.headers.get('content-length', 0))
-                    downloaded = 0
-                    chunk_size = 32768  # 32KB chunks for better performance
-                    
-                    # Update with total size
-                    active_downloads[download_id]['total_bytes'] = total_size
-                    active_downloads[download_id]['status'] = 'streaming'
-                    
-                    start_time = time.time()
-                    last_progress_time = start_time
-                    
-                    # Stream chunks with progress tracking
-                    for chunk in r.iter_content(chunk_size=chunk_size):
-                        if chunk:
-                            downloaded += len(chunk)
-                            current_time = time.time()
-                            
-                            # Update progress every 0.5 seconds
-                            if current_time - last_progress_time >= 0.5:
-                                speed = downloaded / (current_time - start_time) if (current_time - start_time) > 0 else 0
-                                percentage = (downloaded / total_size * 100) if total_size > 0 else 0
-                                eta = (total_size - downloaded) / speed if speed > 0 else 0
+                # Handle range requests
+                range_header = request.headers.get('Range')
+                if range_header:
+                    stream_headers['Range'] = range_header
+                
+                # Start streaming with better error handling
+                try:
+                    with requests.get(direct_url, headers=stream_headers, stream=True, timeout=30) as r:
+                        r.raise_for_status()
+                        
+                        total_size = int(r.headers.get('content-length', 0))
+                        downloaded = 0
+                        chunk_size = 32768  # 32KB chunks
+                        
+                        # Update with total size
+                        active_downloads[download_id]['total_bytes'] = total_size
+                        active_downloads[download_id]['status'] = 'streaming'
+                        
+                        start_time = time.time()
+                        last_progress_time = start_time
+                        
+                        # Stream chunks with progress tracking
+                        for chunk in r.iter_content(chunk_size=chunk_size):
+                            if chunk:
+                                downloaded += len(chunk)
+                                current_time = time.time()
                                 
-                                progress_data = {
-                                    'id': download_id,
-                                    'status': 'streaming',
-                                    'downloaded_bytes': downloaded,
-                                    'total_bytes': total_size,
-                                    'speed': speed,
-                                    'percentage': round(percentage, 1),
-                                    'eta': eta
-                                }
+                                # Update progress every 0.5 seconds
+                                if current_time - last_progress_time >= 0.5:
+                                    speed = downloaded / (current_time - start_time) if (current_time - start_time) > 0 else 0
+                                    percentage = (downloaded / total_size * 100) if total_size > 0 else 0
+                                    eta = (total_size - downloaded) / speed if speed > 0 else 0
+                                    
+                                    progress_data = {
+                                        'id': download_id,
+                                        'status': 'streaming',
+                                        'downloaded_bytes': downloaded,
+                                        'total_bytes': total_size,
+                                        'speed': speed,
+                                        'percentage': round(percentage, 1),
+                                        'eta': eta
+                                    }
+                                    
+                                    active_downloads[download_id].update(progress_data)
+                                    socketio.emit('download_progress', progress_data)
+                                    last_progress_time = current_time
                                 
-                                active_downloads[download_id].update(progress_data)
-                                socketio.emit('download_progress', progress_data)
-                                last_progress_time = current_time
-                            
-                            yield chunk
-                    
-                    # Mark as completed
-                    total_time = time.time() - start_time
-                    active_downloads[download_id]['status'] = 'completed'
-                    active_downloads[download_id]['total_time'] = total_time
-                    
-                    socketio.emit('download_status', {
-                        'id': download_id,
-                        'status': 'completed',
-                        'percentage': 100,
-                        'total_time': total_time
-                    })
+                                yield chunk
+                        
+                        # Mark as completed
+                        total_time = time.time() - start_time
+                        active_downloads[download_id]['status'] = 'completed'
+                        active_downloads[download_id]['total_time'] = total_time
+                        
+                        socketio.emit('download_status', {
+                            'id': download_id,
+                            'status': 'completed',
+                            'percentage': 100,
+                            'total_time': total_time
+                        })
+                        
+                except requests.exceptions.RequestException as e:
+                    error_msg = f"Network error: {str(e)}"
+                    logger.error(f"Streaming network error for {download_id}: {error_msg}")
+                    raise Exception(error_msg)
                     
             except Exception as e:
                 logger.error(f"Streaming error for {download_id}: {str(e)}")
@@ -670,12 +585,18 @@ def quick_download():
         if not url:
             return jsonify({'error': 'URL is required'}), 400
         
-        # Extract video information
+        # Extract video information with enhanced error handling
         try:
             video_info = extractor.extract_direct_url(url)
         except Exception as e:
-            logger.error(f"Quick download extraction error: {str(e)}")
-            return jsonify({'error': f'Could not extract video: {str(e)}'}), 400
+            error_msg = str(e)
+            logger.error(f"Quick download extraction error: {error_msg}")
+            
+            # Provide helpful error messages
+            if "TikTok" in error_msg:
+                error_msg = "TikTok extraction failed. Please try again or use a different video."
+            
+            return jsonify({'error': error_msg}), 400
         
         download_id = str(uuid.uuid4())
         
@@ -718,7 +639,12 @@ def get_video_info():
         if not url:
             return jsonify({'error': 'URL is required'}), 400
         
-        video_info = extractor.extract_direct_url(url)
+        try:
+            video_info = extractor.extract_direct_url(url)
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Video info extraction error: {error_msg}")
+            return jsonify({'error': error_msg}), 400
         
         return jsonify({
             'title': video_info['title'],
@@ -736,7 +662,7 @@ def get_video_info():
         logger.error(f"Error getting video info: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-# Keep your existing endpoints for compatibility
+# Keep existing endpoints for compatibility
 @app.route('/api/download/single', methods=['POST'])
 def download_single_video():
     """Legacy endpoint - redirects to streaming"""
@@ -786,7 +712,7 @@ def health_check():
         'timestamp': datetime.now().isoformat(),
         'active_downloads': len(active_downloads),
         'streaming_enabled': True,
-        'version': 'streaming'
+        'version': 'streaming_fixed'
     })
 
 # WebSocket event handlers
