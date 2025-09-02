@@ -10,6 +10,7 @@ import json
 import time
 import uuid
 import threading
+import re  # Added missing import
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
@@ -56,7 +57,7 @@ class StreamingVideoExtractor:
         }
     
     def extract_direct_url(self, url):
-        """Extract direct video URL and metadata with TikTok workaround"""
+        """Extract direct video URL and metadata with improved error handling"""
         try:
             platform = self.detect_platform(url)
             
@@ -130,61 +131,79 @@ class StreamingVideoExtractor:
             raise e
     
     def _extract_tiktok_video(self, url):
-        """Special extraction method for TikTok videos"""
+        """Improved TikTok extraction method with better error handling"""
         try:
-            # Try using yt-dlp first
-            with yt_dlp.YoutubeDL(self.base_options) as ydl:
-                info = ydl.extract_info(url, download=False)
-                
-                if info and 'url' in info:
-                    direct_url = info['url']
-                else:
-                    # Fallback: Use TikTok API workaround
-                    direct_url = self._tiktok_fallback(url)
-                
-                if not direct_url:
-                    raise Exception("Could not extract TikTok video URL")
-                
-                # Clean filename
-                title = info.get('title', 'tiktok_video') if info else 'tiktok_video'
-                ext = 'mp4'
-                
-                safe_title = re.sub(r'[^\w\s-]', '', title)
-                safe_title = re.sub(r'[-\s]+', '-', safe_title)
-                filename = f"{safe_title}.{ext}"
-                
-                return {
-                    'direct_url': direct_url,
-                    'title': title,
-                    'filename': filename,
-                    'filesize': info.get('filesize') if info else None,
-                    'duration': info.get('duration') if info else None,
-                    'platform': 'tiktok',
-                    'headers': {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        'Referer': 'https://www.tiktok.com/',
-                        'Origin': 'https://www.tiktok.com'
-                    },
-                    'thumbnail': info.get('thumbnail') if info else None,
-                    'uploader': info.get('uploader') if info else None,
-                    'view_count': info.get('view_count') if info else None
+            # Try using yt-dlp first with enhanced options
+            tiktok_options = self.base_options.copy()
+            tiktok_options.update({
+                'extractor_args': {
+                    'tiktok': {
+                        'api_hostname': 'api16-normal-c-useast1a.tiktokv.com'
+                    }
                 }
-                
-        except Exception as e:
-            logger.error(f"TikTok extraction failed: {str(e)}")
-            # Try fallback method
+            })
+            
+            with yt_dlp.YoutubeDL(tiktok_options) as ydl:
+                try:
+                    info = ydl.extract_info(url, download=False)
+                    
+                    if info and info.get('url'):
+                        # Clean filename
+                        title = info.get('title', 'tiktok_video') or 'tiktok_video'
+                        ext = info.get('ext', 'mp4')
+                        
+                        safe_title = re.sub(r'[^\w\s-]', '', str(title))
+                        safe_title = re.sub(r'[-\s]+', '-', safe_title)
+                        filename = f"{safe_title}.{ext}"
+                        
+                        return {
+                            'direct_url': info['url'],
+                            'title': title,
+                            'filename': filename,
+                            'filesize': info.get('filesize') or info.get('filesize_approx'),
+                            'duration': info.get('duration'),
+                            'platform': 'tiktok',
+                            'headers': {
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                                'Referer': 'https://www.tiktok.com/',
+                                'Origin': 'https://www.tiktok.com'
+                            },
+                            'thumbnail': info.get('thumbnail'),
+                            'uploader': info.get('uploader'),
+                            'view_count': info.get('view_count')
+                        }
+                    else:
+                        logger.warning("yt-dlp succeeded but no URL found in info")
+                        
+                except Exception as ydl_error:
+                    logger.warning(f"yt-dlp extraction failed: {str(ydl_error)}")
+                    # Continue to fallback method
+                    pass
+            
+            # Fallback method with improved error handling
             return self._tiktok_fallback_extraction(url)
+            
+        except Exception as e:
+            logger.error(f"TikTok extraction failed completely: {str(e)}")
+            raise Exception(f"Could not extract TikTok video: {str(e)}")
     
     def _tiktok_fallback_extraction(self, url):
-        """Fallback method for TikTok video extraction"""
+        """Improved fallback method for TikTok video extraction"""
         try:
             # Extract video ID from URL
             video_id = self._extract_tiktok_id(url)
             if not video_id:
-                raise Exception("Could not extract TikTok video ID")
+                # If we can't extract ID, try direct webpage parsing
+                return self._tiktok_webpage_fallback(url)
             
-            # Use TikTok API or direct download URL pattern
-            api_url = f"https://api16-normal-c-useast1a.tiktokv.com/aweme/v1/feed/?aweme_id={video_id}"
+            logger.info(f"Extracted TikTok video ID: {video_id}")
+            
+            # Try multiple API endpoints
+            api_endpoints = [
+                f"https://api16-normal-c-useast1a.tiktokv.com/aweme/v1/feed/?aweme_id={video_id}",
+                f"https://api-h2.tiktokv.com/aweme/v1/feed/?aweme_id={video_id}",
+                f"https://api2.musical.ly/aweme/v1/aweme/detail/?aweme_id={video_id}"
+            ]
             
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -194,57 +213,57 @@ class StreamingVideoExtractor:
                 'Origin': 'https://www.tiktok.com'
             }
             
-            response = requests.get(api_url, headers=headers, timeout=30)
-            if response.status_code == 200:
-                data = response.json()
-                
-                if data.get('aweme_list') and len(data['aweme_list']) > 0:
-                    video_data = data['aweme_list'][0]
-                    video_url = video_data.get('video', {}).get('play_addr', {}).get('url_list', [])
-                    
-                    if video_url:
-                        direct_url = video_url[0].replace('playwm', 'play')
+            for api_url in api_endpoints:
+                try:
+                    response = requests.get(api_url, headers=headers, timeout=15)
+                    if response.status_code == 200:
+                        data = response.json()
                         
-                        return {
-                            'direct_url': direct_url,
-                            'title': video_data.get('desc', 'tiktok_video'),
-                            'filename': f"tiktok_{video_id}.mp4",
-                            'filesize': None,
-                            'duration': video_data.get('duration', 0) / 1000,
-                            'platform': 'tiktok',
-                            'headers': headers,
-                            'thumbnail': video_data.get('video', {}).get('cover', {}).get('url_list', [None])[0],
-                            'uploader': video_data.get('author', {}).get('unique_id', 'unknown'),
-                            'view_count': video_data.get('statistics', {}).get('play_count', 0)
-                        }
+                        if data.get('aweme_list') and len(data['aweme_list']) > 0:
+                            video_data = data['aweme_list'][0]
+                            video_urls = video_data.get('video', {}).get('play_addr', {}).get('url_list', [])
+                            
+                            if video_urls:
+                                # Get the highest quality URL
+                                direct_url = video_urls[0]
+                                # Remove watermark parameter if present
+                                if 'playwm' in direct_url:
+                                    direct_url = direct_url.replace('playwm', 'play')
+                                
+                                title = video_data.get('desc', f'tiktok_{video_id}') or f'tiktok_{video_id}'
+                                
+                                return {
+                                    'direct_url': direct_url,
+                                    'title': title,
+                                    'filename': f"tiktok_{video_id}.mp4",
+                                    'filesize': None,
+                                    'duration': video_data.get('duration', 0) / 1000 if video_data.get('duration') else None,
+                                    'platform': 'tiktok',
+                                    'headers': headers,
+                                    'thumbnail': video_data.get('video', {}).get('cover', {}).get('url_list', [None])[0],
+                                    'uploader': video_data.get('author', {}).get('unique_id', 'unknown'),
+                                    'view_count': video_data.get('statistics', {}).get('play_count', 0)
+                                }
+                except requests.RequestException as e:
+                    logger.warning(f"API endpoint {api_url} failed: {str(e)}")
+                    continue
             
-            # If API fails, try direct pattern
-            direct_url = f"https://api16-normal-c-useast1a.tiktokv.com/aweme/v1/play/?video_id={video_id}"
-            
-            return {
-                'direct_url': direct_url,
-                'title': f"tiktok_video_{video_id}",
-                'filename': f"tiktok_{video_id}.mp4",
-                'filesize': None,
-                'duration': None,
-                'platform': 'tiktok',
-                'headers': headers,
-                'thumbnail': None,
-                'uploader': 'unknown',
-                'view_count': 0
-            }
+            # If all API attempts fail, try webpage parsing
+            return self._tiktok_webpage_fallback(url)
             
         except Exception as e:
             logger.error(f"TikTok fallback extraction failed: {str(e)}")
-            raise Exception(f"TikTok video extraction failed: {str(e)}")
+            raise Exception(f"All TikTok extraction methods failed: {str(e)}")
     
     def _extract_tiktok_id(self, url):
-        """Extract TikTok video ID from URL"""
+        """Extract TikTok video ID from URL with improved patterns"""
         patterns = [
             r'tiktok\.com/.+?/video/(\d+)',
             r'tiktok\.com/@[^/]+/video/(\d+)',
             r'vm\.tiktok\.com/([a-zA-Z0-9]+)',
-            r'vt\.tiktok\.com/([a-zA-Z0-9]+)'
+            r'vt\.tiktok\.com/([a-zA-Z0-9]+)',
+            r'tiktok\.com/t/([a-zA-Z0-9]+)',
+            r'/video/(\d+)'
         ]
         
         for pattern in patterns:
@@ -252,10 +271,11 @@ class StreamingVideoExtractor:
             if match:
                 return match.group(1)
         
+        logger.warning(f"Could not extract TikTok ID from URL: {url}")
         return None
     
-    def _tiktok_fallback(self, url):
-        """Alternative TikTok extraction method"""
+    def _tiktok_webpage_fallback(self, url):
+        """Parse TikTok webpage directly as last resort"""
         try:
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -271,33 +291,54 @@ class StreamingVideoExtractor:
             response = session.get(url, headers=headers, timeout=30)
             response.raise_for_status()
             
-            # Look for video URL in the HTML
             html_content = response.text
+            
+            # Try to extract video URL from HTML
             video_patterns = [
                 r'"downloadAddr":"([^"]+)"',
                 r'"playAddr":"([^"]+)"',
-                r'https://[^"]*\.tiktokcdn\.com/[^"]*\.mp4',
-                r'https://v\d{2}\.tiktokcdn\.com/[^"]*'
+                r'https://[^"]*\.tiktokcdn\.com/[^"]*\.mp4[^"]*',
+                r'https://v\d{2}\.tiktokcdn\.com/[^"]*',
+                r'"url":"(https://[^"]*tiktokcdn[^"]*\.mp4[^"]*)"'
             ]
             
             for pattern in video_patterns:
                 matches = re.findall(pattern, html_content)
                 if matches:
-                    video_url = matches[0].replace('\\u002F', '/')
-                    if 'downloadAddr' in video_url or 'playAddr' in video_url:
+                    video_url = matches[0]
+                    # Clean up the URL
+                    video_url = video_url.replace('\\u002F', '/').replace('\\', '')
+                    if 'playwm' in video_url:
                         video_url = video_url.replace('playwm', 'play')
-                    return video_url
+                    
+                    # Extract title from HTML
+                    title_match = re.search(r'<title>([^<]+)</title>', html_content)
+                    title = title_match.group(1) if title_match else 'tiktok_video'
+                    title = title.replace(' | TikTok', '').strip()
+                    
+                    return {
+                        'direct_url': video_url,
+                        'title': title,
+                        'filename': f"tiktok_{int(time.time())}.mp4",
+                        'filesize': None,
+                        'duration': None,
+                        'platform': 'tiktok',
+                        'headers': headers,
+                        'thumbnail': None,
+                        'uploader': 'unknown',
+                        'view_count': 0
+                    }
             
-            return None
+            raise Exception("No video URL found in webpage")
             
         except Exception as e:
-            logger.error(f"TikTok fallback failed: {str(e)}")
-            return None
+            logger.error(f"TikTok webpage fallback failed: {str(e)}")
+            raise Exception(f"Webpage parsing failed: {str(e)}")
     
     def detect_platform(self, url):
         """Detect video platform"""
         domain = url.lower()
-        if 'tiktok.com' in domain or 'vm.tiktok.com' in domain:
+        if 'tiktok.com' in domain or 'vm.tiktok.com' in domain or 'vt.tiktok.com' in domain:
             return 'tiktok'
         elif 'youtube.com' in domain or 'youtu.be' in domain:
             return 'youtube'
@@ -382,6 +423,7 @@ def stream_video(download_id):
         try:
             video_info = extractor.extract_direct_url(url)
         except Exception as e:
+            logger.error(f"Could not refresh video URL: {str(e)}")
             return jsonify({'error': f'Could not refresh video URL: {str(e)}'}), 400
         
         direct_url = video_info['direct_url']
@@ -517,6 +559,7 @@ def quick_download():
         try:
             video_info = extractor.extract_direct_url(url)
         except Exception as e:
+            logger.error(f"Quick download extraction error: {str(e)}")
             return jsonify({'error': f'Could not extract video: {str(e)}'}), 400
         
         download_id = str(uuid.uuid4())
