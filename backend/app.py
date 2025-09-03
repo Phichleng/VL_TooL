@@ -548,41 +548,140 @@ class StreamingVideoExtractor:
             return self._extract_other_platform(url, platform)
     
     def _extract_other_platform(self, url, platform):
-        """Extract from non-TikTok platforms"""
+        """Extract from non-TikTok platforms with enhanced YouTube support"""
         options = self.base_options.copy()
         
         if platform == 'youtube':
-            options['format'] = 'best[height<=1080]/bestvideo[height<=1080]+bestaudio/best'
+            # Enhanced YouTube options to fix extraction issues
+            options.update({
+                'format': 'best[height<=1080]/bestvideo[height<=1080]+bestaudio/best',
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-us,en;q=0.5',
+                    'Sec-Fetch-Mode': 'navigate',
+                },
+                'extractor_args': {
+                    'youtube': {
+                        'skip': ['dash', 'hls'],  # Skip problematic formats
+                        'player_client': ['android', 'web'],  # Try different clients
+                    }
+                },
+                'cookies': None,  # Don't use cookies
+                'age_limit': None,  # Don't enforce age limits
+            })
+        elif platform == 'instagram':
+            options['http_headers']['User-Agent'] = 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1'
         
+        # Try multiple extraction attempts for YouTube
+        if platform == 'youtube':
+            return self._extract_youtube_with_fallback(url, options)
+        else:
+            return self._extract_generic_platform(url, platform, options)
+    
+    def _extract_youtube_with_fallback(self, url, base_options):
+        """Extract YouTube with multiple fallback methods"""
+        errors = []
+        
+        # Method 1: Standard extraction
+        try:
+            options = base_options.copy()
+            with yt_dlp.YoutubeDL(options) as ydl:
+                info = ydl.extract_info(url, download=False)
+                return self._format_platform_response(info, 'youtube')
+        except Exception as e:
+            errors.append(f"Standard method: {str(e)}")
+            logger.warning(f"YouTube standard extraction failed: {str(e)}")
+        
+        # Method 2: Try with different client
+        try:
+            options = base_options.copy()
+            options['extractor_args']['youtube']['player_client'] = ['android']
+            with yt_dlp.YoutubeDL(options) as ydl:
+                info = ydl.extract_info(url, download=False)
+                return self._format_platform_response(info, 'youtube')
+        except Exception as e:
+            errors.append(f"Android client: {str(e)}")
+            logger.warning(f"YouTube Android client failed: {str(e)}")
+        
+        # Method 3: Try with embed client
+        try:
+            options = base_options.copy()
+            options['extractor_args']['youtube']['player_client'] = ['web_embedded']
+            with yt_dlp.YoutubeDL(options) as ydl:
+                info = ydl.extract_info(url, download=False)
+                return self._format_platform_response(info, 'youtube')
+        except Exception as e:
+            errors.append(f"Embedded client: {str(e)}")
+            logger.warning(f"YouTube embedded client failed: {str(e)}")
+        
+        # Method 4: Try without extractor args
+        try:
+            options = base_options.copy()
+            options.pop('extractor_args', None)
+            options['format'] = 'worst'  # Try worst quality as fallback
+            with yt_dlp.YoutubeDL(options) as ydl:
+                info = ydl.extract_info(url, download=False)
+                return self._format_platform_response(info, 'youtube')
+        except Exception as e:
+            errors.append(f"Basic method: {str(e)}")
+            logger.warning(f"YouTube basic method failed: {str(e)}")
+        
+        # All methods failed
+        error_summary = "All YouTube extraction methods failed:\n" + "\n".join(errors)
+        logger.error(error_summary)
+        raise Exception("YouTube video extraction failed. This video may be age-restricted, private, or unavailable in your region.")
+    
+    def _extract_generic_platform(self, url, platform, options):
+        """Extract from generic platforms"""
         with yt_dlp.YoutubeDL(options) as ydl:
             info = ydl.extract_info(url, download=False)
+            return self._format_platform_response(info, platform)
+    
+    def _format_platform_response(self, info, platform):
+        """Format response for any platform"""
+        if not info:
+            raise Exception("No video info extracted")
+        
+        # Get direct URL
+        direct_url = info.get('url')
+        if not direct_url and 'formats' in info:
+            formats = info['formats']
+            # Try to find best format with video+audio
+            best_format = None
+            for fmt in formats:
+                if fmt.get('url') and fmt.get('vcodec') != 'none' and fmt.get('acodec') != 'none':
+                    if not best_format or (fmt.get('height', 0) > best_format.get('height', 0)):
+                        best_format = fmt
             
-            direct_url = info.get('url')
-            if not direct_url and 'formats' in info:
-                formats = info['formats']
+            # Fallback to any format with URL
+            if not best_format:
                 for fmt in formats:
                     if fmt.get('url'):
-                        direct_url = fmt['url']
+                        best_format = fmt
                         break
             
-            if not direct_url:
-                raise Exception("Could not extract video URL")
-            
-            title = info.get('title', 'video')
-            ext = info.get('ext', 'mp4')
-            
-            return {
-                'direct_url': direct_url,
-                'title': title,
-                'filename': f"{platform.title()}_{self._clean_filename(title)}.{ext}",
-                'filesize': info.get('filesize'),
-                'duration': info.get('duration'),
-                'platform': platform,
-                'headers': self.base_options['http_headers'],
-                'thumbnail': info.get('thumbnail'),
-                'uploader': info.get('uploader'),
-                'view_count': info.get('view_count')
-            }
+            if best_format:
+                direct_url = best_format['url']
+        
+        if not direct_url:
+            raise Exception("Could not extract video URL from available formats")
+        
+        title = info.get('title', 'video')
+        ext = info.get('ext', 'mp4')
+        
+        return {
+            'direct_url': direct_url,
+            'title': title,
+            'filename': f"{platform.title()}_{self._clean_filename(title)}.{ext}",
+            'filesize': info.get('filesize') or info.get('filesize_approx'),
+            'duration': info.get('duration'),
+            'platform': platform,
+            'headers': self.base_options['http_headers'],
+            'thumbnail': info.get('thumbnail'),
+            'uploader': info.get('uploader'),
+            'view_count': info.get('view_count')
+        }
     
     def _clean_filename(self, filename):
         """Clean filename"""
