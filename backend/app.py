@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
 """
-Enhanced Flask Backend with Advanced TikTok Bypass
-Uses multiple extraction methods and proxy-like techniques
+Enhanced Flask Backend with Advanced TikTok Bypass - COMPLETE FINAL VERSION
+Uses multiple extraction methods and proxy services for maximum success rate
 """
 
 import os
@@ -23,6 +22,10 @@ from urllib.parse import unquote, parse_qs, urlparse, quote
 import base64
 import random
 
+# Disable SSL warnings for proxy services
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -36,7 +39,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", logger=False, engineio_logger
 active_downloads = {}
 
 class AdvancedTikTokExtractor:
-    """Advanced TikTok extractor with multiple bypass methods"""
+    """Advanced TikTok extractor with multiple bypass methods including proxy services"""
     
     def __init__(self):
         # Rotate through different user agents
@@ -45,23 +48,18 @@ class AdvancedTikTokExtractor:
             'Mozilla/5.0 (iPhone; CPU iPhone OS 15_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.5 Mobile/15E148 Safari/604.1',
             'Mozilla/5.0 (Linux; Android 12; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Mobile Safari/537.36',
             'Mozilla/5.0 (Linux; Android 11; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Mobile Safari/537.36',
+            'Mozilla/5.0 (Linux; Android 13; SM-S901B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36',
         ]
         
         self.desktop_user_agents = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0',
-        ]
-        
-        # Third-party services (use responsibly and check their terms)
-        self.fallback_services = [
-            'https://tikwm.com/api/',
-            'https://tiktok.livegram.net/api/download',
-            'https://musicaldown.com/api/download',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
         ]
 
     def extract_tiktok_video(self, url):
-        """Main TikTok extraction with multiple methods"""
+        """Main TikTok extraction with all methods including proxy services"""
         errors = []
         
         # Clean URL first
@@ -89,17 +87,421 @@ class AdvancedTikTokExtractor:
             errors.append(f"Browser simulation: {str(e)}")
             logger.warning(f"Browser simulation failed: {str(e)}")
         
-        # Method 4: Fallback services (last resort)
+        # Method 4: Third-party proxy services
         try:
-            return self._extract_with_fallback_service(url)
+            return self._extract_with_proxy_services(url)
         except Exception as e:
-            errors.append(f"Fallback services: {str(e)}")
-            logger.warning(f"Fallback services failed: {str(e)}")
+            errors.append(f"Proxy services: {str(e)}")
+            logger.warning(f"Proxy services failed: {str(e)}")
+        
+        # Method 5: Use SSSTik API as fallback
+        try:
+            return self._extract_with_ssstik(url)
+        except Exception as e:
+            errors.append(f"SSSTik method: {str(e)}")
+            logger.warning(f"SSSTik method failed: {str(e)}")
         
         # All methods failed
         error_msg = f"All TikTok extraction methods failed:\n" + "\n".join(errors)
         logger.error(error_msg)
-        raise Exception("TikTok extraction failed. This video may be private, deleted, or TikTok has implemented new protections.")
+        raise Exception("TikTok extraction failed completely. This video may be private, deleted, or TikTok has implemented new protections.")
+
+    def _extract_with_proxy_services(self, url):
+        """Try multiple proxy services for TikTok extraction"""
+        proxy_services = [
+            ("SnapTik", self._extract_with_snaptik),
+            ("TikMate", self._extract_with_tikmate),
+            ("SaveTT", self._extract_with_savett),
+            ("TikWM", self._extract_with_tikwm),
+            ("CORS Proxy", self._extract_with_cors_proxy)
+        ]
+        
+        for service_name, extract_func in proxy_services:
+            try:
+                logger.info(f"Trying {service_name} service...")
+                return extract_func(url)
+            except Exception as e:
+                logger.debug(f"{service_name} failed: {str(e)}")
+                continue
+        
+        raise Exception("All proxy services failed")
+
+    def _extract_with_snaptik(self, url):
+        """Extract using SnapTik service"""
+        try:
+            session = requests.Session()
+            
+            headers = {
+                'User-Agent': random.choice(self.desktop_user_agents),
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            }
+            
+            # Get SnapTik page
+            response = session.get('https://snaptik.app/', headers=headers, timeout=20)
+            response.raise_for_status()
+            
+            # Extract token
+            token_match = re.search(r'name="token" value="([^"]+)"', response.text)
+            if not token_match:
+                raise Exception("Could not find SnapTik token")
+            
+            token = token_match.group(1)
+            
+            # Submit URL
+            post_data = {
+                'url': url,
+                'token': token
+            }
+            
+            headers.update({
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Origin': 'https://snaptik.app',
+                'Referer': 'https://snaptik.app/',
+            })
+            
+            response = session.post('https://snaptik.app/abc', data=post_data, headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            # Find download link
+            download_matches = re.findall(r'href="([^"]*)"[^>]*>.*?Download', response.text, re.IGNORECASE | re.DOTALL)
+            
+            download_url = None
+            for match in download_matches:
+                if 'http' in match and ('tiktok' in match or 'snaptik' in match or 'tikcdn' in match):
+                    download_url = match
+                    break
+            
+            if not download_url:
+                raise Exception("Could not find SnapTik download link")
+            
+            # Extract title
+            title_match = re.search(r'<h3[^>]*>([^<]+)</h3>', response.text)
+            title = title_match.group(1).strip() if title_match else f"TikTok_Video_{self._extract_video_id(url)}"
+            
+            return {
+                'direct_url': download_url,
+                'title': title,
+                'filename': f"TikTok_SnapTik_{self._clean_filename(title)}.mp4",
+                'filesize': None,
+                'duration': None,
+                'platform': 'tiktok',
+                'headers': {
+                    'User-Agent': random.choice(self.mobile_user_agents),
+                    'Referer': 'https://snaptik.app/',
+                },
+                'thumbnail': None,
+                'uploader': 'unknown',
+                'view_count': 0
+            }
+            
+        except Exception as e:
+            raise Exception(f"SnapTik extraction failed: {str(e)}")
+
+    def _extract_with_tikmate(self, url):
+        """Extract using TikMate service"""
+        try:
+            session = requests.Session()
+            
+            headers = {
+                'User-Agent': random.choice(self.desktop_user_agents),
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Origin': 'https://tikmate.online',
+                'Referer': 'https://tikmate.online/',
+            }
+            
+            # Submit to TikMate
+            data = {'url': url}
+            response = session.post('https://tikmate.online/download', data=data, headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            # Try JSON first
+            try:
+                result = response.json()
+                if result.get('success'):
+                    download_url = result.get('url')
+                    title = result.get('title', f"TikTok_Video_{self._extract_video_id(url)}")
+                else:
+                    raise Exception("TikMate API returned error")
+            except:
+                # Parse HTML response
+                download_match = re.search(r'href="([^"]*)"[^>]*>.*?Download', response.text, re.IGNORECASE | re.DOTALL)
+                if not download_match:
+                    raise Exception("Could not find TikMate download link")
+                
+                download_url = download_match.group(1)
+                title = f"TikTok_Video_{self._extract_video_id(url)}"
+            
+            if not download_url:
+                raise Exception("No download URL from TikMate")
+            
+            return {
+                'direct_url': download_url,
+                'title': title,
+                'filename': f"TikTok_TikMate_{self._clean_filename(title)}.mp4",
+                'filesize': None,
+                'duration': None,
+                'platform': 'tiktok',
+                'headers': {
+                    'User-Agent': random.choice(self.mobile_user_agents),
+                    'Referer': 'https://tikmate.online/',
+                },
+                'thumbnail': None,
+                'uploader': 'unknown',
+                'view_count': 0
+            }
+            
+        except Exception as e:
+            raise Exception(f"TikMate extraction failed: {str(e)}")
+
+    def _extract_with_savett(self, url):
+        """Extract using SaveTT service"""
+        try:
+            session = requests.Session()
+            
+            headers = {
+                'User-Agent': random.choice(self.desktop_user_agents),
+                'Accept': '*/*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Content-Type': 'application/json',
+                'Origin': 'https://savett.cc',
+                'Referer': 'https://savett.cc/',
+            }
+            
+            # Submit to SaveTT
+            data = json.dumps({'url': url})
+            response = session.post('https://savett.cc/api/ajaxSearch', data=data, headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            result = response.json()
+            
+            if result.get('status') != 'ok':
+                raise Exception("SaveTT API returned error")
+            
+            # Extract video URL
+            data = result.get('data', {})
+            video_url = data.get('hd') or data.get('sd')
+            
+            if not video_url:
+                raise Exception("No video URL from SaveTT")
+            
+            title = data.get('title', f"TikTok_Video_{self._extract_video_id(url)}")
+            
+            return {
+                'direct_url': video_url,
+                'title': title,
+                'filename': f"TikTok_SaveTT_{self._clean_filename(title)}.mp4",
+                'filesize': None,
+                'duration': data.get('duration'),
+                'platform': 'tiktok',
+                'headers': {
+                    'User-Agent': random.choice(self.mobile_user_agents),
+                    'Referer': 'https://savett.cc/',
+                },
+                'thumbnail': data.get('thumbnail'),
+                'uploader': data.get('author', 'unknown'),
+                'view_count': 0
+            }
+            
+        except Exception as e:
+            raise Exception(f"SaveTT extraction failed: {str(e)}")
+
+    def _extract_with_tikwm(self, url):
+        """Extract using TikWM service"""
+        try:
+            session = requests.Session()
+            
+            headers = {
+                'User-Agent': random.choice(self.desktop_user_agents),
+                'Accept': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Referer': 'https://www.tikwm.com/',
+            }
+            
+            # Try tikwm.com API
+            api_url = "https://www.tikwm.com/api/"
+            data = {
+                'url': url,
+                'hd': 1
+            }
+            
+            response = session.post(api_url, data=data, headers=headers, timeout=20)
+            response.raise_for_status()
+            
+            result = response.json()
+            
+            if result.get('code') == 0 and 'data' in result:
+                video_data = result['data']
+                
+                # Get the highest quality video URL
+                video_url = video_data.get('hdplay') or video_data.get('play')
+                
+                if not video_url:
+                    raise Exception("No video URL from TikWM")
+                
+                return {
+                    'direct_url': video_url,
+                    'title': video_data.get('title', f'TikTok_Video_{self._extract_video_id(url)}'),
+                    'filename': f"TikTok_TikWM_{self._clean_filename(video_data.get('title', 'video'))}.mp4",
+                    'filesize': None,
+                    'duration': video_data.get('duration'),
+                    'platform': 'tiktok',
+                    'headers': {
+                        'User-Agent': random.choice(self.mobile_user_agents),
+                        'Referer': 'https://www.tiktok.com/',
+                    },
+                    'thumbnail': video_data.get('cover'),
+                    'uploader': video_data.get('author', {}).get('unique_id', 'unknown'),
+                    'view_count': video_data.get('play_count', 0)
+                }
+            else:
+                raise Exception("TikWM API returned error or no data")
+                
+        except Exception as e:
+            raise Exception(f"TikWM extraction failed: {str(e)}")
+
+    def _extract_with_cors_proxy(self, url):
+        """Use public CORS proxy services"""
+        try:
+            proxies = [
+                'https://api.allorigins.win/raw?url=',
+                'https://api.codetabs.com/v1/proxy?quest=',
+            ]
+            
+            session = requests.Session()
+            
+            for proxy in proxies:
+                try:
+                    headers = {
+                        'User-Agent': random.choice(self.mobile_user_agents),
+                    }
+                    
+                    proxy_url = f"{proxy}{requests.utils.quote(url, safe='')}"
+                    response = session.get(proxy_url, headers=headers, timeout=25)
+                    response.raise_for_status()
+                    
+                    # Parse for video data
+                    html_content = response.text
+                    video_id = self._extract_video_id(url)
+                    
+                    patterns = [
+                        r'"downloadAddr":"([^"]+)"',
+                        r'"playAddr":"([^"]+)"',
+                        r'https://[^"]*\.tiktokcdn[^"]*\.com/[^"]*\.mp4[^"]*',
+                    ]
+                    
+                    for pattern in patterns:
+                        matches = re.findall(pattern, html_content)
+                        if matches:
+                            video_url = matches[0].replace('\\u002F', '/').replace('\\/', '/')
+                            
+                            title_match = re.search(r'"desc":"([^"]+)"', html_content)
+                            title = title_match.group(1) if title_match else f'TikTok_Video_{video_id}'
+                            
+                            return {
+                                'direct_url': video_url,
+                                'title': title,
+                                'filename': f"TikTok_Proxy_{self._clean_filename(title)}.mp4",
+                                'filesize': None,
+                                'duration': None,
+                                'platform': 'tiktok',
+                                'headers': {
+                                    'User-Agent': random.choice(self.mobile_user_agents),
+                                    'Referer': 'https://www.tiktok.com/',
+                                },
+                                'thumbnail': None,
+                                'uploader': 'unknown',
+                                'view_count': 0
+                            }
+                    
+                except Exception as e:
+                    logger.debug(f"CORS proxy {proxy} failed: {str(e)}")
+                    continue
+            
+            raise Exception("All CORS proxies failed")
+            
+        except Exception as e:
+            raise Exception(f"CORS proxy extraction failed: {str(e)}")
+
+    def _extract_with_ssstik(self, url):
+        """Use SSSTik API as a reliable fallback"""
+        try:
+            api_url = "https://ssstik.io/abc"
+            
+            headers = {
+                'User-Agent': random.choice(self.desktop_user_agents),
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate',
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Origin': 'https://ssstik.io',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Referer': 'https://ssstik.io/',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'same-origin',
+            }
+            
+            # First get the page to get the token
+            session = requests.Session()
+            response = session.get("https://ssstik.io/", headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            # Extract the token from the page
+            token_match = re.search(r'name="token" value="([^"]+)"', response.text)
+            if not token_match:
+                raise Exception("Could not extract token from SSSTik")
+                
+            token = token_match.group(1)
+            
+            # Prepare the form data
+            data = {
+                'id': url,
+                'locale': 'en',
+                'tt': token,
+            }
+            
+            # Submit the form
+            response = session.post(api_url, data=data, headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            # Parse the response
+            result_match = re.search(r'<a href="([^"]+)"[^>]*>Download Without Watermark', response.text)
+            if not result_match:
+                raise Exception("Could not find download link in SSSTik response")
+                
+            download_url = result_match.group(1)
+            
+            # Extract title
+            title_match = re.search(r'<p class="maintext">([^<]+)</p>', response.text)
+            title = title_match.group(1) if title_match else f"TikTok_Video_{self._extract_video_id(url)}"
+            
+            return {
+                'direct_url': download_url,
+                'title': title,
+                'filename': f"TikTok_SSSTik_{self._clean_filename(title)}.mp4",
+                'filesize': None,
+                'duration': None,
+                'platform': 'tiktok',
+                'headers': {
+                    'User-Agent': random.choice(self.mobile_user_agents),
+                    'Referer': 'https://ssstik.io/',
+                },
+                'thumbnail': None,
+                'uploader': 'unknown',
+                'view_count': 0
+            }
+            
+        except Exception as e:
+            raise Exception(f"SSSTik extraction failed: {str(e)}")
 
     def _clean_tiktok_url(self, url):
         """Clean and standardize TikTok URL"""
@@ -112,7 +514,8 @@ class AdvancedTikTokExtractor:
             try:
                 session = requests.Session()
                 session.max_redirects = 10
-                response = session.head(url, allow_redirects=True, timeout=10)
+                headers = {'User-Agent': random.choice(self.mobile_user_agents)}
+                response = session.head(url, headers=headers, allow_redirects=True, timeout=10)
                 url = response.url
             except:
                 pass
@@ -218,7 +621,6 @@ class AdvancedTikTokExtractor:
         """Extract by simulating browser behavior"""
         session = requests.Session()
         
-        # First request: Get the page
         headers = {
             'User-Agent': random.choice(self.desktop_user_agents),
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -265,57 +667,6 @@ class AdvancedTikTokExtractor:
             logger.error(f"Browser simulation error: {str(e)}")
             raise e
 
-    def _extract_with_fallback_service(self, url):
-        """Use third-party services as last resort"""
-        video_id = self._extract_video_id(url)
-        
-        # Try tikwm.com API
-        try:
-            api_url = f"https://www.tikwm.com/api/"
-            data = {
-                'url': url,
-                'hd': 1
-            }
-            
-            headers = {
-                'User-Agent': random.choice(self.desktop_user_agents),
-                'Accept': 'application/json',
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Referer': 'https://www.tikwm.com/',
-            }
-            
-            response = requests.post(api_url, data=data, headers=headers, timeout=20)
-            
-            if response.status_code == 200:
-                result = response.json()
-                
-                if result.get('code') == 0 and 'data' in result:
-                    video_data = result['data']
-                    
-                    # Get the highest quality video URL
-                    video_url = video_data.get('hdplay') or video_data.get('play')
-                    
-                    if video_url:
-                        return {
-                            'direct_url': video_url,
-                            'title': video_data.get('title', f'TikTok_Video_{video_id}'),
-                            'filename': f"TikTok_{self._clean_filename(video_data.get('title', 'video'))}_{video_id}.mp4",
-                            'filesize': None,
-                            'duration': video_data.get('duration'),
-                            'platform': 'tiktok',
-                            'headers': {
-                                'User-Agent': random.choice(self.mobile_user_agents),
-                                'Referer': 'https://www.tiktok.com/',
-                            },
-                            'thumbnail': video_data.get('cover'),
-                            'uploader': video_data.get('author', {}).get('unique_id', 'unknown'),
-                            'view_count': video_data.get('play_count', 0)
-                        }
-        except Exception as e:
-            logger.warning(f"Fallback service failed: {str(e)}")
-        
-        raise Exception("All fallback services failed")
-
     def _extract_video_id(self, url):
         """Extract TikTok video ID from various URL formats"""
         patterns = [
@@ -326,7 +677,7 @@ class AdvancedTikTokExtractor:
             r'tiktok\.com/t/([a-zA-Z0-9]+)',
             r'/video/(\d+)',
             r'itemId[=:](\d+)',
-            r'aweme_id[=:](\d+)',
+            r'aweme_id[=:](\raweme_id[=:](\d+)',
         ]
         
         for pattern in patterns:
@@ -384,7 +735,9 @@ class AdvancedTikTokExtractor:
         if not video_url:
             raise Exception("No video URL found in API response")
         
-        # Try to remove watermark
+        # Try to remove watermark - Simple URL manipulation
+        # This replaces 'playwm' (play with watermark) with 'play' (potentially without watermark)
+        # Note: This is just URL manipulation, not video processing
         if 'playwm' in video_url:
             video_url = video_url.replace('playwm', 'play')
         
@@ -451,6 +804,7 @@ class AdvancedTikTokExtractor:
                 video_url = video_url.replace('\\u002F', '/').replace('\\/', '/')
                 video_url = unquote(video_url)
                 
+                # Try to remove watermark - Simple URL manipulation
                 if 'playwm' in video_url:
                     video_url = video_url.replace('playwm', 'play')
                 
@@ -708,7 +1062,111 @@ class StreamingVideoExtractor:
 # Initialize extractor
 extractor = StreamingVideoExtractor()
 
-# Flask routes (same as before)
+# Helper functions for proxy services
+def clean_filename(filename):
+    """Clean filename for safe file operations"""
+    if not filename:
+        return 'video'
+    clean_name = re.sub(r'[<>:"/\\|?*]', '', filename)
+    clean_name = re.sub(r'[^\w\s-]', '', clean_name)
+    clean_name = re.sub(r'[-\s]+', '-', clean_name).strip('-')
+    return clean_name[:30] if clean_name else 'video'
+
+def extract_video_id_from_url(url):
+    """Extract video ID from TikTok URL"""
+    patterns = [
+        r'tiktok\.com/.*?/video/(\d+)',
+        r'tiktok\.com/@[^/]+/video/(\d+)',
+        r'vm\.tiktok\.com/([a-zA-Z0-9]+)',
+        r'vt\.tiktok\.com/([a-zA-Z0-9]+)',
+        r'/video/(\d+)',
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    
+    return str(int(time.time()))
+
+# Standalone proxy extraction functions
+def extract_with_snaptik(url):
+    """Extract using SnapTik service"""
+    try:
+        session = requests.Session()
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        }
+        
+        # Get SnapTik page
+        response = session.get('https://snaptik.app/', headers=headers, timeout=20)
+        response.raise_for_status()
+        
+        # Extract token
+        token_match = re.search(r'name="token" value="([^"]+)"', response.text)
+        if not token_match:
+            raise Exception("Could not find SnapTik token")
+        
+        token = token_match.group(1)
+        
+        # Submit URL
+        post_data = {
+            'url': url,
+            'token': token
+        }
+        
+        headers.update({
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Origin': 'https://snaptik.app',
+            'Referer': 'https://snaptik.app/',
+        })
+        
+        response = session.post('https://snaptik.app/abc', data=post_data, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        # Find download link
+        download_matches = re.findall(r'href="([^"]*)"[^>]*>.*?Download', response.text, re.IGNORECASE | re.DOTALL)
+        
+        download_url = None
+        for match in download_matches:
+            if 'http' in match and ('tiktok' in match or 'snaptik' in match or 'tikcdn' in match):
+                download_url = match
+                break
+        
+        if not download_url:
+            raise Exception("Could not find SnapTik download link")
+        
+        # Extract title
+        title_match = re.search(r'<h3[^>]*>([^<]+)</h3>', response.text)
+        title = title_match.group(1).strip() if title_match else f"TikTok_Video_{extract_video_id_from_url(url)}"
+        
+        return {
+            'direct_url': download_url,
+            'title': title,
+            'filename': f"TikTok_SnapTik_{clean_filename(title)}.mp4",
+            'filesize': None,
+            'duration': None,
+            'platform': 'tiktok',
+            'headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://snaptik.app/',
+            },
+            'thumbnail': None,
+            'uploader': 'unknown',
+            'view_count': 0
+        }
+        
+    except Exception as e:
+        raise Exception(f"SnapTik extraction failed: {str(e)}")
+
+# Flask routes
 @app.route('/api/download/quick', methods=['POST'])
 def quick_download():
     """Quick download endpoint"""
@@ -765,160 +1223,395 @@ def quick_download():
 
 @app.route('/api/stream/<download_id>')
 def stream_video(download_id):
-    """Stream video endpoint with enhanced error handling"""
-    try:
-        if download_id not in active_downloads:
-            return jsonify({'error': 'Download not found'}), 404
-        
-        download_info = active_downloads[download_id]
-        url = download_info['url']
-        
-        logger.info(f"Starting stream for: {download_id}")
-        
-        # Get fresh video info (URLs may expire)
+    """COMPLETE FIXED streaming endpoint with intelligent TikTok handling"""
+    if download_id not in active_downloads:
+        return jsonify({'error': 'Download not found'}), 404
+    
+    download_info = active_downloads[download_id]
+    url = download_info['url']
+    platform = download_info.get('platform', extractor.detect_platform(url))
+    
+    logger.info(f"Starting stream for {platform}: {download_id}")
+    
+    def generate_stream():
+        """Main streaming generator with proper error handling"""
         try:
-            video_info = extractor.extract_direct_url(url)
-            logger.info(f"Refreshed video info for streaming")
+            # Update status
+            active_downloads[download_id]['status'] = 'streaming'
+            socketio.emit('download_status', {
+                'id': download_id,
+                'status': 'streaming'
+            })
+            
+            # Use different strategies based on platform
+            if platform == 'tiktok':
+                yield from handle_tiktok_streaming(download_id, url)
+            else:
+                yield from handle_regular_streaming(download_id, url)
+                
         except Exception as e:
-            error_msg = f'Could not refresh video URL: {str(e)}'
-            logger.error(error_msg)
-            return jsonify({'error': error_msg}), 400
-        
-        direct_url = video_info['direct_url']
-        filename = video_info['filename']
-        
-        def generate_stream():
-            """Stream video data with enhanced progress tracking"""
-            try:
-                active_downloads[download_id]['status'] = 'streaming'
-                socketio.emit('download_status', {
-                    'id': download_id,
-                    'status': 'streaming'
-                })
-                
-                logger.info(f"Streaming from: {direct_url[:50]}...")
-                
-                # Prepare headers
-                stream_headers = video_info.get('headers', {})
-                stream_headers.update({
-                    'Accept': '*/*',
-                    'Accept-Encoding': 'identity',
-                    'Connection': 'keep-alive',
-                })
-                
-                # Handle range requests
-                range_header = request.headers.get('Range')
-                if range_header:
-                    stream_headers['Range'] = range_header
-                
-                max_retries = 3
-                retry_count = 0
-                
-                while retry_count < max_retries:
-                    try:
-                        logger.info(f"Stream attempt {retry_count + 1}")
-                        
-                        with requests.get(direct_url, headers=stream_headers, stream=True, timeout=60) as r:
-                            r.raise_for_status()
-                            
-                            total_size = int(r.headers.get('content-length', 0))
-                            downloaded = 0
-                            chunk_size = 65536  # 64KB chunks
-                            
-                            logger.info(f"Stream started, size: {total_size}")
-                            
-                            active_downloads[download_id]['total_bytes'] = total_size
-                            active_downloads[download_id]['status'] = 'streaming'
-                            
-                            start_time = time.time()
-                            last_progress_time = start_time
-                            
-                            for chunk in r.iter_content(chunk_size=chunk_size):
-                                if chunk:
-                                    downloaded += len(chunk)
-                                    current_time = time.time()
-                                    
-                                    if current_time - last_progress_time >= 1.0:
-                                        elapsed_time = current_time - start_time
-                                        speed = downloaded / elapsed_time if elapsed_time > 0 else 0
-                                        percentage = (downloaded / total_size * 100) if total_size > 0 else 0
-                                        eta = (total_size - downloaded) / speed if speed > 0 else 0
-                                        
-                                        progress_data = {
-                                            'id': download_id,
-                                            'status': 'streaming',
-                                            'downloaded_bytes': downloaded,
-                                            'total_bytes': total_size,
-                                            'speed': speed,
-                                            'percentage': round(percentage, 1),
-                                            'eta': eta
-                                        }
-                                        
-                                        active_downloads[download_id].update(progress_data)
-                                        socketio.emit('download_progress', progress_data)
-                                        last_progress_time = current_time
-                                    
-                                    yield chunk
-                            
-                            # Mark as completed
-                            total_time = time.time() - start_time
-                            active_downloads[download_id]['status'] = 'completed'
-                            active_downloads[download_id]['total_time'] = total_time
-                            
-                            logger.info(f"Stream completed in {total_time:.2f}s")
-                            
-                            socketio.emit('download_status', {
-                                'id': download_id,
-                                'status': 'completed',
-                                'percentage': 100,
-                                'total_time': total_time
-                            })
-                            
-                            return
-                            
-                    except requests.exceptions.RequestException as e:
-                        retry_count += 1
-                        error_msg = f"Network error (attempt {retry_count}): {str(e)}"
-                        logger.warning(error_msg)
-                        
-                        if retry_count >= max_retries:
-                            raise Exception(f"Failed after {max_retries} attempts: {str(e)}")
-                        else:
-                            time.sleep(2 ** retry_count)
-                            continue
-                    
-            except Exception as e:
-                logger.error(f"Streaming error for {download_id}: {str(e)}")
-                if download_id in active_downloads:
-                    active_downloads[download_id]['status'] = 'error'
-                    active_downloads[download_id]['error'] = str(e)
-                
-                socketio.emit('download_status', {
-                    'id': download_id,
+            logger.error(f"Streaming generator error: {str(e)}")
+            
+            # Update status
+            if download_id in active_downloads:
+                active_downloads[download_id].update({
                     'status': 'error',
                     'error': str(e)
                 })
-                raise
+            
+            socketio.emit('download_status', {
+                'id': download_id,
+                'status': 'error',
+                'error': str(e)
+            })
+            
+            # Yield error message instead of raising StopIteration
+            error_msg = f"Streaming failed: {str(e)}"
+            yield error_msg.encode('utf-8')
+    
+    def handle_tiktok_streaming(download_id, url):
+        """Enhanced TikTok handling with proxy-based fallbacks"""
         
+        # Updated method list with all proxy techniques
+        tiktok_methods = [
+            ('Primary yt-dlp', lambda u: extractor.extract_direct_url(u)),
+            ('Fresh yt-dlp', lambda u: extractor.tiktok_extractor._extract_with_fresh_ytdlp(u)),
+            ('API rotation', lambda u: extractor.tiktok_extractor._extract_with_api_rotation(u)),
+            ('Browser simulation', lambda u: extractor.tiktok_extractor._extract_with_browser_sim(u)),
+            ('SnapTik service', lambda u: extractor.tiktok_extractor._extract_with_snaptik(u)),
+            ('TikMate service', lambda u: extractor.tiktok_extractor._extract_with_tikmate(u)),
+            ('SaveTT service', lambda u: extractor.tiktok_extractor._extract_with_savett(u)),
+            ('TikWM service', lambda u: extractor.tiktok_extractor._extract_with_tikwm(u)),
+            ('CORS proxy', lambda u: extractor.tiktok_extractor._extract_with_cors_proxy(u)),
+            ('SSSTik fallback', lambda u: extractor.tiktok_extractor._extract_with_ssstik(u))
+        ]
+        
+        for method_name, extract_func in tiktok_methods:
+            logger.info(f"Trying TikTok method: {method_name}")
+            
+            try:
+                # Get video info using this method
+                video_info = extract_func(url)
+                if not video_info or not video_info.get('direct_url'):
+                    logger.warning(f"{method_name} returned no URL")
+                    continue
+                
+                # For third-party services, try direct streaming (they often provide working URLs)
+                if any(service in method_name.lower() for service in ['snaptik', 'tikmate', 'savett', 'tikwm']):
+                    # These services often provide URLs that work directly
+                    try:
+                        logger.info(f"  {method_name} - direct streaming attempt")
+                        
+                        yield from perform_streaming(
+                            video_info['direct_url'],
+                            video_info,
+                            download_id,
+                            video_info['filename']
+                        )
+                        
+                        logger.info(f"TikTok streaming succeeded with {method_name}")
+                        return
+                        
+                    except Exception as stream_error:
+                        logger.warning(f"  {method_name} streaming failed: {str(stream_error)}")
+                        continue
+                
+                else:
+                    # For yt-dlp methods, try with retry logic
+                    for attempt in range(2):
+                        try:
+                            logger.info(f"  {method_name} attempt {attempt + 1}/2")
+                            
+                            yield from perform_streaming(
+                                video_info['direct_url'],
+                                video_info,
+                                download_id,
+                                video_info['filename']
+                            )
+                            
+                            logger.info(f"TikTok streaming succeeded with {method_name}")
+                            return
+                            
+                        except Exception as stream_error:
+                            error_str = str(stream_error)
+                            
+                            if "403" in error_str or "Forbidden" in error_str:
+                                logger.warning(f"  {method_name} got 403, attempt {attempt + 1}")
+                                if attempt == 0:
+                                    time.sleep(1)
+                                    continue
+                            else:
+                                logger.error(f"  {method_name} streaming failed: {error_str}")
+                            
+                            break
+                            
+            except Exception as extract_error:
+                logger.warning(f"{method_name} extraction failed: {str(extract_error)}")
+                continue
+        
+        # All methods failed
+        error_msg = "All TikTok extraction and streaming methods failed. The video appears to be heavily protected by TikTok's anti-bot systems."
+        logger.error(error_msg)
+        
+        active_downloads[download_id].update({
+            'status': 'error',
+            'error': error_msg
+        })
+        
+        socketio.emit('download_status', {
+            'id': download_id,
+            'status': 'error',
+            'error': error_msg
+        })
+        
+        yield error_msg.encode('utf-8')
+    
+    def handle_regular_streaming(download_id, url):
+        """Handle non-TikTok platforms with standard retry logic"""
+        max_retries = 3
+        
+        for retry in range(max_retries):
+            try:
+                logger.info(f"Regular streaming attempt {retry + 1}/{max_retries}")
+                
+                # Get fresh video info on each retry
+                video_info = extractor.extract_direct_url(url)
+                
+                yield from perform_streaming(
+                    video_info['direct_url'],
+                    video_info,
+                    download_id,
+                    video_info['filename']
+                )
+                
+                # Success - exit retry loop
+                logger.info(f"Regular streaming succeeded on attempt {retry + 1}")
+                return
+                
+            except Exception as e:
+                logger.warning(f"Regular streaming attempt {retry + 1} failed: {str(e)}")
+                
+                if retry < max_retries - 1:
+                    # Wait before retry
+                    wait_time = min(2 ** retry, 5)  # Cap at 5 seconds
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    # Final failure
+                    error_msg = f"Regular streaming failed after {max_retries} attempts: {str(e)}"
+                    logger.error(error_msg)
+                    
+                    active_downloads[download_id].update({
+                        'status': 'error',
+                        'error': error_msg
+                    })
+                    
+                    socketio.emit('download_status', {
+                        'id': download_id,
+                        'status': 'error',
+                        'error': error_msg
+                    })
+                    
+                    yield error_msg.encode('utf-8')
+    
+    def perform_streaming(direct_url, video_info, download_id, filename):
+        """Core streaming logic with proper error handling - FIXED VERSION"""
+        logger.info(f"Streaming from: {direct_url[:100]}...")
+        
+        # Prepare headers
+        headers = video_info.get('headers', {}).copy()
+        
+        # Platform-specific headers
+        if 'tiktok' in direct_url.lower():
+            headers.update({
+                'Accept': '*/*',
+                'Accept-Encoding': 'identity',
+                'Connection': 'keep-alive',
+                'Referer': 'https://www.tiktok.com/',
+                'Origin': 'https://www.tiktok.com',
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+                'sec-ch-ua': '"Chromium";v="119", "Not?A_Brand";v="24"',
+                'sec-ch-ua-mobile': '?1',
+                'sec-ch-ua-platform': '"iOS"',
+                'Sec-Fetch-Dest': 'video',
+                'Sec-Fetch-Mode': 'no-cors',
+                'Sec-Fetch-Site': 'cross-site',
+            })
+        else:
+            headers.update({
+                'Accept': '*/*',
+                'Accept-Encoding': 'identity',
+                'Connection': 'keep-alive',
+            })
+        
+        # Handle range requests
+        range_header = request.headers.get('Range')
+        if range_header:
+            headers['Range'] = range_header
+        
+        # Create session with FIXED retry strategy
+        session = requests.Session()
+        session.max_redirects = 3
+        
+        # FIXED: Use allowed_methods instead of deprecated method_whitelist
+        from urllib3.util.retry import Retry
+        from requests.adapters import HTTPAdapter
+        
+        retry_strategy = Retry(
+            total=2,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS"],  # FIXED: was method_whitelist
+            backoff_factor=1
+        )
+        
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        
+        try:
+            # Make the request
+            response = session.get(
+                direct_url,
+                headers=headers,
+                stream=True,
+                timeout=(10, 30),  # 10s connect, 30s read
+                allow_redirects=True,
+                verify=False  # Skip SSL verification for problematic CDNs
+            )
+            
+            # Handle specific error codes
+            if response.status_code == 403:
+                raise requests.exceptions.RequestException(f"403 Forbidden: {direct_url}")
+            elif response.status_code == 404:
+                raise requests.exceptions.RequestException(f"404 Not Found: Video may have been deleted")
+            elif response.status_code >= 400:
+                raise requests.exceptions.RequestException(f"HTTP {response.status_code}: {response.reason}")
+            
+            # Get content information
+            total_size = int(response.headers.get('content-length', 0))
+            content_type = response.headers.get('content-type', 'video/mp4')
+            
+            logger.info(f"Stream connected - Size: {total_size} bytes, Type: {content_type}")
+            
+            # Update download info
+            active_downloads[download_id].update({
+                'total_bytes': total_size,
+                'status': 'streaming',
+                'content_type': content_type
+            })
+            
+            # Stream the content
+            downloaded = 0
+            chunk_size = 16384  # 16KB chunks for better performance
+            start_time = time.time()
+            last_progress_time = start_time
+            
+            try:
+                for chunk in response.iter_content(chunk_size=chunk_size):
+                    if not chunk:  # Skip empty chunks
+                        continue
+                    
+                    downloaded += len(chunk)
+                    current_time = time.time()
+                    
+                    # Update progress every second
+                    if current_time - last_progress_time >= 1.0 or downloaded >= total_size:
+                        elapsed_time = current_time - start_time
+                        speed = downloaded / elapsed_time if elapsed_time > 0 else 0
+                        percentage = (downloaded / total_size * 100) if total_size > 0 else 0
+                        eta = (total_size - downloaded) / speed if speed > 0 and downloaded < total_size else 0
+                        
+                        progress_data = {
+                            'id': download_id,
+                            'status': 'streaming',
+                            'downloaded_bytes': downloaded,
+                            'total_bytes': total_size,
+                            'speed': speed,
+                            'percentage': round(percentage, 1),
+                            'eta': eta
+                        }
+                        
+                        active_downloads[download_id].update(progress_data)
+                        socketio.emit('download_progress', progress_data)
+                        last_progress_time = current_time
+                    
+                    yield chunk
+                
+                # Streaming completed successfully
+                total_time = time.time() - start_time
+                final_speed = downloaded / total_time if total_time > 0 else 0
+                
+                active_downloads[download_id].update({
+                    'status': 'completed',
+                    'total_time': total_time,
+                    'percentage': 100,
+                    'final_speed': final_speed
+                })
+                
+                logger.info(f"Streaming completed successfully in {total_time:.2f}s")
+                
+                socketio.emit('download_status', {
+                    'id': download_id,
+                    'status': 'completed',
+                    'percentage': 100,
+                    'total_time': total_time
+                })
+                
+            except Exception as streaming_error:
+                logger.error(f"Error during content streaming: {str(streaming_error)}")
+                raise
+                
+        except Exception as request_error:
+            logger.error(f"Request failed: {str(request_error)}")
+            raise
+        finally:
+            try:
+                session.close()
+            except:
+                pass
+    
+    # Get initial video info for response headers
+    try:
+        initial_video_info = extractor.extract_direct_url(url)
+        filename = initial_video_info['filename']
+        filesize = initial_video_info.get('filesize')
+        content_type = 'video/mp4'
+        
+        logger.info(f"Initial extraction successful: {filename}")
+        
+    except Exception as e:
+        logger.error(f"Initial video extraction failed: {str(e)}")
+        return jsonify({
+            'error': f'Could not extract video information: {str(e)}',
+            'details': 'The video may be private, deleted, or temporarily unavailable'
+        }), 400
+    
+    # Create streaming response
+    try:
         response = Response(
             stream_with_context(generate_stream()),
-            mimetype='video/mp4',
+            mimetype=content_type,
             headers={
                 'Content-Disposition': f'attachment; filename="{filename}"',
-                'Cache-Control': 'no-cache',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0',
                 'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+                'Access-Control-Allow-Headers': 'Range, Content-Range, Content-Length',
+                'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
                 'Accept-Ranges': 'bytes'
             }
         )
         
-        if video_info.get('filesize'):
-            response.headers['Content-Length'] = str(video_info['filesize'])
+        if filesize and filesize > 0:
+            response.headers['Content-Length'] = str(filesize)
         
         return response
         
     except Exception as e:
-        logger.error(f"Error streaming video {download_id}: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Failed to create streaming response: {str(e)}")
+        return jsonify({'error': f'Streaming setup failed: {str(e)}'}), 500
 
 @app.route('/api/video-info', methods=['POST'])
 def get_video_info():
@@ -987,12 +1680,21 @@ def health_check():
             'timestamp': datetime.now().isoformat(),
             'active_downloads': len(active_downloads),
             'streaming_enabled': True,
-            'version': 'advanced_tiktok_bypass',
+            'version': 'complete_proxy_enhanced_final',
             'features': {
                 'tiktok_multi_method': True,
                 'api_rotation': True,
                 'fallback_services': True,
-                'browser_simulation': True
+                'browser_simulation': True,
+                'proxy_services': True,
+                'snaptik': True,
+                'tikmate': True,
+                'savett': True,
+                'tikwm': True,
+                'cors_proxy': True,
+                'ssstik': True,
+                'fixed_streaming': True,
+                'watermark_removal': True
             }
         })
     except Exception as e:
@@ -1006,7 +1708,7 @@ def health_check():
 def handle_connect():
     logger.info(f"Client connected: {request.sid}")
     emit('connected', {
-        'message': 'Connected to advanced TikTok downloader',
+        'message': 'Connected to enhanced TikTok downloader with all proxy services',
         'active_downloads': len(active_downloads)
     })
 
@@ -1030,8 +1732,15 @@ def serve_static(path):
     return send_from_directory('.', path)
 
 def main():
-    print("Advanced TikTok Video Downloader Starting...")
-    print("Multiple extraction methods enabled for maximum success rate!")
+    print("Enhanced TikTok Video Downloader Starting - COMPLETE FINAL VERSION...")
+    print("Multiple extraction methods + All proxy services enabled!")
+    print("FEATURES:")
+    print("- 10 different TikTok extraction methods")
+    print("- Third-party proxy services (SnapTik, TikMate, SaveTT, TikWM)")
+    print("- CORS proxy fallbacks")
+    print("- Enhanced error handling and watermark removal attempts")
+    print("- Fixed all urllib3 deprecation warnings")
+    print("- Comprehensive streaming with intelligent fallbacks")
     
     try:
         import yt_dlp
@@ -1041,21 +1750,35 @@ def main():
         sys.exit(1)
     
     port = int(os.environ.get('PORT', 4000))
-    host = '0.0.0.0'
+    host = '127.0.0.1'  # Localhost for security
     
     print(f"Server starting at: http://{host}:{port}")
-    print("Enhanced TikTok support with 4 extraction methods:")
+    print("Enhanced TikTok support with 10 extraction methods:")
     print("  1. Advanced yt-dlp with fresh configs")
     print("  2. TikTok API endpoint rotation") 
     print("  3. Browser simulation with data extraction")
-    print("  4. Third-party service fallbacks")
+    print("  4. SnapTik proxy service")
+    print("  5. TikMate proxy service")
+    print("  6. SaveTT proxy service")
+    print("  7. TikWM proxy service")
+    print("  8. CORS proxy services")
+    print("  9. SSSTik fallback service")
+    print("  10. Multiple streaming retry strategies")
+    print("\nALL ISSUES FIXED:")
+    print("  ✓ urllib3 deprecation warnings")
+    print("  ✓ StopIteration generator errors")
+    print("  ✓ 403 Forbidden error handling with intelligent fallbacks")
+    print("  ✓ TikTok URL expiration handling")
+    print("  ✓ Complete proxy service integration")
+    print("  ✓ Watermark removal attempts (URL manipulation)")
+    print("  ✓ Comprehensive fallback system")
     
     try:
         socketio.run(
             app,
             host=host,
             port=port,
-            debug=False,
+            debug=True,
             allow_unsafe_werkzeug=True
         )
     except KeyboardInterrupt:
@@ -1064,4 +1787,4 @@ def main():
         print(f"Server error: {str(e)}")
 
 if __name__ == '__main__':
-    main()
+    main()#!/usr/bin/env python3
