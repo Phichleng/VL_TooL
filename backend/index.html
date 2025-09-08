@@ -83,11 +83,10 @@
             const [infoUrl, setInfoUrl] = useState('');
             const [videoInfo, setVideoInfo] = useState(null);
 
-            const API_BASE = `http://localhost:4000/api`;
-
+            const API_BASE = `${window.location.protocol}//${window.location.host}/api`;
             // WebSocket connection
             useEffect(() => {
-                const newSocket = io('http://localhost:4000', {  // Explicit localhost connection
+                const newSocket = io(window.location.origin, {
                     transports: ['websocket', 'polling'],
                     reconnection: true,
                     reconnectionAttempts: 5,

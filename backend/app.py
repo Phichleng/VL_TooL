@@ -1750,7 +1750,7 @@ def main():
         sys.exit(1)
     
     port = int(os.environ.get('PORT', 4000))
-    host = '127.0.0.1'  # Localhost for security
+    host = '0.0.0.0'
     
     print(f"Server starting at: http://{host}:{port}")
     print("Enhanced TikTok support with 10 extraction methods:")
