@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fast Hand Video</title>
+    <title>Fast Hand Video - Fixed</title>
     
     <!-- React and dependencies -->
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -61,6 +61,21 @@
             background: #888;
             border-radius: 3px;
         }
+        
+        .error-alert {
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
     </style>
 </head>
 <body>
@@ -76,6 +91,7 @@
             const [activeTab, setActiveTab] = useState('single');
             const [downloads, setDownloads] = useState([]);
             const [isProcessing, setIsProcessing] = useState(false);
+            const [error, setError] = useState(null);
             
             // Form states
             const [singleUrl, setSingleUrl] = useState('');
@@ -84,6 +100,7 @@
             const [videoInfo, setVideoInfo] = useState(null);
 
             const API_BASE = `${window.location.protocol}//${window.location.host}/api`;
+
             // WebSocket connection
             useEffect(() => {
                 const newSocket = io(window.location.origin, {
@@ -122,13 +139,6 @@
                 return () => newSocket.close();
             }, []);
 
-            // Request notification permission
-            useEffect(() => {
-                if ('Notification' in window && Notification.permission === 'default') {
-                    Notification.requestPermission();
-                }
-            }, []);
-
             const updateDownloadProgress = (id, progressData) => {
                 setDownloads(prev => prev.map(download => 
                     download.id === id ? { ...download, ...progressData, last_update: Date.now() } : download
@@ -141,14 +151,33 @@
                 ));
             };
 
-            // Direct streaming download function
+            const showError = (errorData) => {
+                setError(errorData);
+                setTimeout(() => setError(null), 10000); // Clear error after 10 seconds
+            };
+
+            // Enhanced error handling function
+            const handleApiError = (response, defaultMessage) => {
+                if (response.error) {
+                    showError({
+                        title: response.error,
+                        message: response.details || defaultMessage,
+                        suggestion: response.suggestion,
+                        type: 'error'
+                    });
+                    return true;
+                }
+                return false;
+            };
+
+            // Direct streaming download function with better error handling
             const handleDirectDownload = async (url) => {
                 if (!url.trim()) return;
                 
                 setIsProcessing(true);
+                setError(null);
                 
                 try {
-                    // Get streaming setup
                     const response = await fetch(`${API_BASE}/download/quick`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -158,7 +187,6 @@
                     const result = await response.json();
                     
                     if (response.ok) {
-                        // Add to downloads list
                         const newDownload = {
                             id: result.download_id,
                             url: url,
@@ -181,11 +209,16 @@
                         
                         return true;
                     } else {
-                        alert('Error: ' + result.error);
+                        handleApiError(result, 'Failed to process video URL');
                         return false;
                     }
                 } catch (error) {
-                    alert('Connection error: ' + error.message);
+                    showError({
+                        title: 'Connection Error',
+                        message: `Unable to connect to server: ${error.message}`,
+                        suggestion: 'Please check your internet connection and try again.',
+                        type: 'error'
+                    });
                     return false;
                 } finally {
                     setIsProcessing(false);
@@ -194,10 +227,8 @@
 
             const startStreamingDownload = async (downloadId, streamUrl, filename) => {
                 try {
-                    // Update status to streaming
                     updateDownloadStatus(downloadId, { status: 'streaming' });
 
-                    // Use fetch API with progress tracking
                     const response = await fetch(streamUrl);
                     
                     if (!response.ok) {
@@ -220,7 +251,6 @@
                         chunks.push(value);
                         receivedLength += value.length;
                         
-                        // Update progress every 200ms for smooth experience
                         const currentTime = Date.now();
                         if (currentTime - lastProgressTime >= 200) {
                             const elapsedSeconds = (currentTime - startTime) / 1000;
@@ -254,10 +284,8 @@
                     link.click();
                     document.body.removeChild(link);
                     
-                    // Clean up
                     setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
                     
-                    // Update status to completed
                     const totalTime = (Date.now() - startTime) / 1000;
                     updateDownloadStatus(downloadId, { 
                         status: 'completed', 
@@ -266,19 +294,25 @@
                         total_time: totalTime
                     });
 
-                    // Show notification
-                    if ('Notification' in window && Notification.permission === 'granted') {
-                        new Notification('Download Complete', {
-                            body: `${filename} downloaded successfully`,
-                            icon: '/favicon.ico'
-                        });
-                    }
+                    // Show success notification
+                    showError({
+                        title: 'Download Complete',
+                        message: `${filename} has been downloaded successfully!`,
+                        type: 'success'
+                    });
 
                 } catch (error) {
                     console.error('Streaming download error:', error);
                     updateDownloadStatus(downloadId, { 
                         status: 'error', 
                         error: error.message 
+                    });
+                    
+                    showError({
+                        title: 'Download Failed',
+                        message: `Failed to download video: ${error.message}`,
+                        suggestion: 'Please try again or check if the video is still available.',
+                        type: 'error'
                     });
                 }
             };
@@ -296,16 +330,27 @@
                 if (urls.length === 0) return;
                 
                 setIsProcessing(true);
+                let successCount = 0;
+                let failureCount = 0;
                 
-                // Download each URL with delay
                 for (let i = 0; i < urls.length; i++) {
-                    await handleDirectDownload(urls[i]);
+                    const success = await handleDirectDownload(urls[i]);
+                    if (success) {
+                        successCount++;
+                    } else {
+                        failureCount++;
+                    }
                     
-                    // Add delay between downloads to prevent rate limiting
                     if (i < urls.length - 1) {
                         await new Promise(resolve => setTimeout(resolve, 2000));
                     }
                 }
+                
+                showError({
+                    title: 'Batch Download Complete',
+                    message: `${successCount} downloads started successfully. ${failureCount} failed.`,
+                    type: successCount > 0 ? 'success' : 'error'
+                });
                 
                 setBatchUrls('');
                 setIsProcessing(false);
@@ -315,6 +360,8 @@
                 if (!infoUrl.trim()) return;
                 
                 setIsProcessing(true);
+                setVideoInfo(null);
+                setError(null);
                 
                 try {
                     const response = await fetch(`${API_BASE}/video-info`, {
@@ -327,12 +374,21 @@
                     
                     if (response.ok) {
                         setVideoInfo(result);
+                        showError({
+                            title: 'Video Information Retrieved',
+                            message: 'Video details loaded successfully!',
+                            type: 'success'
+                        });
                     } else {
-                        alert('Error: ' + result.error);
+                        handleApiError(result, 'Failed to get video information');
                         setVideoInfo(null);
                     }
                 } catch (error) {
-                    alert('Connection error: ' + error.message);
+                    showError({
+                        title: 'Connection Error',
+                        message: `Unable to get video information: ${error.message}`,
+                        type: 'error'
+                    });
                 }
                 
                 setIsProcessing(false);
@@ -342,6 +398,11 @@
                 setDownloads(prev => prev.filter(d => 
                     ['ready', 'streaming'].includes(d.status)
                 ));
+                showError({
+                    title: 'Downloads Cleared',
+                    message: 'Completed and failed downloads have been cleared.',
+                    type: 'info'
+                });
             };
 
             // Utility functions
@@ -392,10 +453,52 @@
                     youtube: 'bg-red-100 text-red-800',
                     instagram: 'bg-purple-100 text-purple-800',
                     facebook: 'bg-blue-100 text-blue-800',
-                    douyin: 'bg-indigo-100 text-indigo-800',
                     unknown: 'bg-gray-100 text-gray-800'
                 };
                 return colors[platform] || colors.unknown;
+            };
+
+            // Error Alert Component
+            const ErrorAlert = ({ error, onClose }) => {
+                if (!error) return null;
+
+                const bgColor = error.type === 'success' ? 'bg-green-50 border-green-200' :
+                               error.type === 'info' ? 'bg-blue-50 border-blue-200' :
+                               'bg-red-50 border-red-200';
+                
+                const textColor = error.type === 'success' ? 'text-green-800' :
+                                 error.type === 'info' ? 'text-blue-800' :
+                                 'text-red-800';
+
+                const iconColor = error.type === 'success' ? 'text-green-500' :
+                                 error.type === 'info' ? 'text-blue-500' :
+                                 'text-red-500';
+
+                return (
+                    <div className={`error-alert fixed top-4 right-4 max-w-md p-4 border rounded-lg shadow-lg z-50 ${bgColor}`}>
+                        <div className="flex items-start">
+                            <div className={`flex-shrink-0 ${iconColor} text-xl mr-3`}>
+                                {error.type === 'success' ? '✅' : 
+                                 error.type === 'info' ? 'ℹ️' : '❌'}
+                            </div>
+                            <div className="flex-1">
+                                <h4 className={`font-semibold ${textColor} mb-1`}>{error.title}</h4>
+                                <p className={`text-sm ${textColor} mb-2`}>{error.message}</p>
+                                {error.suggestion && (
+                                    <p className={`text-xs ${textColor} opacity-80`}>
+                                        💡 {error.suggestion}
+                                    </p>
+                                )}
+                            </div>
+                            <button
+                                onClick={onClose}
+                                className={`flex-shrink-0 ml-2 ${textColor} hover:opacity-70`}
+                            >
+                                ✖
+                            </button>
+                        </div>
+                    </div>
+                );
             };
 
             // Enhanced Download Item Component
@@ -419,7 +522,7 @@
                                     </span>
                                     {download.status === 'streaming' && (
                                         <span className="px-2 py-1 rounded text-xs font-medium bg-gradient-to-r from-blue-500 to-purple-600 text-white streaming-pulse">
-                                            DIRECT
+                                            STREAMING
                                         </span>
                                     )}
                                 </div>
@@ -431,12 +534,6 @@
                                 <p className="text-xs text-gray-500 truncate" title={download.url}>
                                     {download.url}
                                 </p>
-                                
-                                {download.filename && (
-                                    <p className="text-xs text-gray-500 truncate mt-1" title={download.filename}>
-                                        📄 {download.filename}
-                                    </p>
-                                )}
                             </div>
                             
                             <button 
@@ -467,9 +564,6 @@
                                         )}
                                         {download.speed > 0 && (
                                             <span>{formatSpeed(download.speed)}</span>
-                                        )}
-                                        {download.eta > 0 && download.eta < 3600 && (
-                                            <span>ETA: {formatTime(download.eta)}</span>
                                         )}
                                     </div>
                                 </div>
@@ -514,7 +608,6 @@
                             </div>
                         )}
 
-                        {/* Status Summary */}
                         <div className="flex items-center justify-between mt-2">
                             <span className="text-xs text-gray-500 font-medium">
                                 {download.status === 'streaming' ? 'Downloading directly...' : 
@@ -535,6 +628,9 @@
 
             return (
                 <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
+                    {/* Error Alert */}
+                    <ErrorAlert error={error} onClose={() => setError(null)} />
+                    
                     <div className="container mx-auto px-4 py-8">
                         {/* Header */}
                         <div className="text-center mb-8">
@@ -542,7 +638,7 @@
                                 Fast Hand Video
                             </h1>
                             <p className="text-gray-600 text-lg mb-2">
-                                King oF Downloads
+                                Enhanced Video Downloader - Fixed Version
                             </p>
                             <div className="flex justify-center items-center space-x-3">
                                 <div className={`w-2 h-2 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500' : 'bg-red-500'}`}></div>
@@ -583,7 +679,7 @@
                                     <div className="p-6">
                                         {activeTab === 'single' && (
                                             <div className="space-y-4">
-                                                <h3 className="text-lg font-semibold mb-4">Drop Video URL</h3>
+                                                <h3 className="text-lg font-semibold mb-4">Single Video Download</h3>
                                                 <div>
                                                     <label className="block text-sm font-medium text-gray-700 mb-2">
                                                         Video URL
@@ -601,7 +697,7 @@
                                                     disabled={!singleUrl.trim() || isProcessing || connectionStatus !== 'connected'}
                                                     className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-3 px-4 rounded-lg hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                                                 >
-                                                    {isProcessing ? 'Starting Download...' : 'Download'}
+                                                    {isProcessing ? 'Processing...' : 'Download Now'}
                                                 </button>
                                             </div>
                                         )}
@@ -626,7 +722,7 @@
                                                     disabled={!batchUrls.trim() || isProcessing || connectionStatus !== 'connected'}
                                                     className="w-full bg-gradient-to-r from-green-500 to-teal-600 text-white py-3 px-4 rounded-lg hover:from-green-600 hover:to-teal-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                                                 >
-                                                    {isProcessing ? 'Starting Batch Download...' : 'Download All Videos'}
+                                                    {isProcessing ? 'Processing Batch...' : 'Download All Videos'}
                                                 </button>
                                             </div>
                                         )}
@@ -696,32 +792,22 @@
                                     </div>
                                 </div>
 
-                                {/* Benefits Section */}
-                                <div className="mt-6 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-6 border border-green-200">
-                                    <h3 className="text-lg font-semibold text-green-800 mb-4">Direct Streaming Benefits</h3>
-                                    <div className="grid md:grid-cols-2 gap-4 text-sm">
-                                        <div className="space-y-3">
-                                            <div className="flex items-center text-green-700">
-                                                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center mr-3">
-                                                    <span className="text-green-600">⚡</span>
-                                                </div>
-                                                <span>Instant downloads - no server processing delay</span>
-                                            </div>
-                                            <div className="flex items-center text-green-700">
-                                                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center mr-3">
-                                                    <span className="text-green-600">💾</span>
-                                                </div>
-                                                <span>No server storage - saves directly to your device</span>
-                                            </div>
-                                        </div>
-                                        <div className="space-y-3">
-                                            <div className="flex items-center text-green-700">
-                                                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center mr-3">
-                                                    <span className="text-green-600">🌐</span>
-                                                </div>
-                                                <span>Works on all devices and modern browsers</span>
-                                            </div>
-                                        </div>
+                                {/* Important Notice */}
+                                <div className="mt-6 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-xl p-6 border border-yellow-200">
+                                    <h3 className="text-lg font-semibold text-yellow-800 mb-4">Important Notice</h3>
+                                    <div className="text-sm text-yellow-700 space-y-2">
+                                        <p>
+                                            <strong>YouTube Authentication:</strong> Some YouTube videos may fail due to enhanced bot protection. 
+                                            This is a known limitation when YouTube requires sign-in verification.
+                                        </p>
+                                        <p>
+                                            <strong>Best Results:</strong> TikTok, Instagram, and Facebook videos typically work better 
+                                            as they use multiple extraction methods and fallback services.
+                                        </p>
+                                        <p>
+                                            <strong>If Download Fails:</strong> Try a different video or platform. Some videos may be 
+                                            private, region-locked, or age-restricted.
+                                        </p>
                                     </div>
                                 </div>
                             </div>
@@ -755,7 +841,7 @@
                                                 <div className="text-6xl mb-4">📱</div>
                                                 <p className="text-gray-500 text-sm">No downloads yet</p>
                                                 <p className="text-gray-400 text-xs mt-2">
-                                                    Paste a video URL above to start direct download
+                                                    Paste a video URL above to start downloading
                                                 </p>
                                             </div>
                                         ) : (
@@ -771,6 +857,7 @@
                                 </div>
                             </div>
                         </div>
+
                         {/* Supported Platforms */}
                         <div className="mt-8 bg-white rounded-xl shadow-lg p-6 border border-gray-100">
                             <h3 className="text-lg font-semibold mb-4">Supported Platforms</h3>
@@ -778,27 +865,29 @@
                                 <div className="text-center p-4 bg-pink-50 rounded-lg border border-pink-200">
                                     <div className="text-2xl mb-2">🎵</div>
                                     <h4 className="font-medium text-pink-800 text-sm">TikTok</h4>
+                                    <p className="text-xs text-pink-600 mt-1">Best Support</p>
                                 </div>
                                 <div className="text-center p-4 bg-red-50 rounded-lg border border-red-200">
                                     <div className="text-2xl mb-2">🎥</div>
                                     <h4 className="font-medium text-red-800 text-sm">YouTube</h4>
+                                    <p className="text-xs text-red-600 mt-1">Limited Support</p>
                                 </div>
                                 <div className="text-center p-4 bg-purple-50 rounded-lg border border-purple-200">
                                     <div className="text-2xl mb-2">📸</div>
                                     <h4 className="font-medium text-purple-800 text-sm">Instagram</h4>
+                                    <p className="text-xs text-purple-600 mt-1">Good Support</p>
                                 </div>
                                 <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
                                     <div className="text-2xl mb-2">👥</div>
                                     <h4 className="font-medium text-blue-800 text-sm">Facebook</h4>
+                                    <p className="text-xs text-blue-600 mt-1">Good Support</p>
                                 </div>
-                                <div className="text-center p-4 bg-indigo-50 rounded-lg border border-indigo-200">
-                                    <div className="text-2xl mb-2">🎭</div>
-                                    <h4 className="font-medium text-indigo-800 text-sm">Douyin</h4>
+                                <div className="text-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                    <div className="text-2xl mb-2">🌐</div>
+                                    <h4 className="font-medium text-gray-800 text-sm">Others</h4>
+                                    <p className="text-xs text-gray-600 mt-1">Via yt-dlp</p>
                                 </div>
                             </div>
-                            <p className="text-center text-sm text-gray-600 mt-4">
-                                Plus 500+ other video platforms supported by Prime
-                            </p>
                         </div>
                     </div>
                 </div>
